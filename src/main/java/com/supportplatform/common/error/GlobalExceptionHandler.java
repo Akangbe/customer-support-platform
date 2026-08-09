@@ -1,5 +1,6 @@
 package com.supportplatform.common.error;
 
+import com.supportplatform.customer.CustomerAlreadyExistsException;
 import com.supportplatform.user.EmailAlreadyRegisteredException;
 import com.supportplatform.user.InvalidInviteTokenException;
 import com.supportplatform.user.LastOwnerException;
@@ -81,6 +82,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InvalidInviteTokenException.class)
     public ResponseEntity<ErrorResponse> handleInvalidInviteToken(InvalidInviteTokenException ex, HttpServletRequest request) {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, List.of());
+    }
+
+    @ExceptionHandler(CustomerAlreadyExistsException.class)
+    public ResponseEntity<ErrorResponse> handleCustomerAlreadyExists(CustomerAlreadyExistsException ex, HttpServletRequest request) {
+        return build(HttpStatus.CONFLICT, ex.getMessage(), request, List.of());
     }
 
     @ExceptionHandler(Exception.class)

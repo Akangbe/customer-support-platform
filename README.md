@@ -41,7 +41,7 @@ We **architect** for multi-tenant now (`tenant_id` everywhere) but we **don't bl
 | Product | [`docs/00-product/product-vision.md`](docs/00-product/product-vision.md) |
 | Requirements | [`docs/01-requirements/functional-requirements.md`](docs/01-requirements/functional-requirements.md) · [`non-functional-requirements.md`](docs/01-requirements/non-functional-requirements.md) |
 | Domain | [`docs/02-domain/domain-model.md`](docs/02-domain/domain-model.md) |
-| Architecture | [`docs/03-architecture/system-architecture.md`](docs/03-architecture/system-architecture.md) · [`architecture-principles.md`](docs/03-architecture/architecture-principles.md) · [`whatsapp-integration.md`](docs/03-architecture/whatsapp-integration.md) · [`identity-and-access.md`](docs/03-architecture/identity-and-access.md) |
+| Architecture | [`docs/03-architecture/system-architecture.md`](docs/03-architecture/system-architecture.md) · [`architecture-principles.md`](docs/03-architecture/architecture-principles.md) · [`whatsapp-integration.md`](docs/03-architecture/whatsapp-integration.md) · [`identity-and-access.md`](docs/03-architecture/identity-and-access.md) · [`customer-domain.md`](docs/03-architecture/customer-domain.md) |
 | Data | `docs/04-data/database-design.md` *(not yet written — arrives with Phase 3/4, the Customer and Conversation domains)* |
 | Decisions | [`docs/08-decisions/decision-log.md`](docs/08-decisions/decision-log.md) |
 
