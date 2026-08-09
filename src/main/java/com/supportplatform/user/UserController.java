@@ -46,26 +46,26 @@ public class UserController {
     @ResponseStatus(HttpStatus.CREATED)
     public InviteUserResponse invite(@AuthenticationPrincipal AuthenticatedPrincipal principal,
                                       @Valid @RequestBody InviteUserRequest request) {
-        User invited = userService.invite(principal.getTenantId(), principal.getRole(), request);
+        User invited = userService.invite(principal.getTenantId(), principal.getUserId(), principal.getRole(), request);
         return InviteUserResponse.from(invited);
     }
 
     @PatchMapping("/{id}/role")
     public UserSummaryResponse changeRole(@AuthenticationPrincipal AuthenticatedPrincipal principal,
                                            @PathVariable UUID id, @Valid @RequestBody ChangeRoleRequest request) {
-        User updated = userService.changeRole(principal.getTenantId(), principal.getRole(), id, request.role());
+        User updated = userService.changeRole(principal.getTenantId(), principal.getUserId(), principal.getRole(), id, request.role());
         return UserSummaryResponse.from(updated);
     }
 
     @PostMapping("/{id}/disable")
     public UserSummaryResponse disable(@AuthenticationPrincipal AuthenticatedPrincipal principal, @PathVariable UUID id) {
-        User updated = userService.disable(principal.getTenantId(), principal.getRole(), id);
+        User updated = userService.disable(principal.getTenantId(), principal.getUserId(), principal.getRole(), id);
         return UserSummaryResponse.from(updated);
     }
 
     @PostMapping("/{id}/enable")
     public UserSummaryResponse enable(@AuthenticationPrincipal AuthenticatedPrincipal principal, @PathVariable UUID id) {
-        User updated = userService.enable(principal.getTenantId(), principal.getRole(), id);
+        User updated = userService.enable(principal.getTenantId(), principal.getUserId(), principal.getRole(), id);
         return UserSummaryResponse.from(updated);
     }
 }

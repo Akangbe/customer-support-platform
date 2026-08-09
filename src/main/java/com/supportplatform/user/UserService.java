@@ -1,6 +1,9 @@
 package com.supportplatform.user;
 
+import com.supportplatform.audit.AuditAction;
+import com.supportplatform.audit.AuditEvent;
 import com.supportplatform.user.dto.InviteUserRequest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -21,7 +24,9 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
  * Owns user-management business rules: the Owner/Admin privilege boundary
  * and the last-Owner invariant (ADR-016). Tenant scoping is enforced here,
  * not trusted from the caller — every lookup goes through
- * {@code findByIdAndTenantId}.
+ * {@code findByIdAndTenantId}. Every method here is an "administrative
+ * action" per FR-AUD-001, so each publishes an {@link AuditEvent}
+ * (audit-domain.md §1) alongside its result.
  */
 @Service
 public class UserService {
@@ -31,14 +36,16 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
-    public User invite(UUID actingTenantId, UserRole actingRole, InviteUserRequest request) {
+    public User invite(UUID actingTenantId, UUID actorUserId, UserRole actingRole, InviteUserRequest request) {
         requireCanManage(actingRole, request.role());
 
         String email = request.email().toLowerCase(Locale.ROOT);
@@ -49,7 +56,11 @@ public class UserService {
         String token = generateToken();
         User user = User.createInvited(actingTenantId, email, request.name(), request.role(),
                 token, Instant.now().plus(INVITE_TOKEN_TTL));
-        return userRepository.save(user);
+        user = userRepository.save(user);
+
+        publish(actingTenantId, actorUserId, AuditAction.USER_INVITED, user.getId(),
+                "Invited " + email + " as " + request.role());
+        return user;
     }
 
     @Transactional
@@ -79,7 +90,7 @@ public class UserService {
     }
 
     @Transactional
-    public User changeRole(UUID actingTenantId, UserRole actingRole, UUID targetUserId, UserRole newRole) {
+    public User changeRole(UUID actingTenantId, UUID actorUserId, UserRole actingRole, UUID targetUserId, UserRole newRole) {
         User target = getWithinTenant(actingTenantId, targetUserId);
         requireCanManage(actingRole, target.getRole());
         requireCanManage(actingRole, newRole);
@@ -87,26 +98,34 @@ public class UserService {
         if (newRole != UserRole.OWNER) {
             guardLastOwner(target);
         }
+        UserRole previousRole = target.getRole();
         target.changeRole(newRole);
+
+        publish(actingTenantId, actorUserId, AuditAction.USER_ROLE_CHANGED, target.getId(),
+                "Changed role from " + previousRole + " to " + newRole);
         return target;
     }
 
     @Transactional
-    public User disable(UUID actingTenantId, UserRole actingRole, UUID targetUserId) {
+    public User disable(UUID actingTenantId, UUID actorUserId, UserRole actingRole, UUID targetUserId) {
         User target = getWithinTenant(actingTenantId, targetUserId);
         requireCanManage(actingRole, target.getRole());
 
         guardLastOwner(target);
         target.disable();
+
+        publish(actingTenantId, actorUserId, AuditAction.USER_DISABLED, target.getId(), "Disabled " + target.getEmail());
         return target;
     }
 
     @Transactional
-    public User enable(UUID actingTenantId, UserRole actingRole, UUID targetUserId) {
+    public User enable(UUID actingTenantId, UUID actorUserId, UserRole actingRole, UUID targetUserId) {
         User target = getWithinTenant(actingTenantId, targetUserId);
         requireCanManage(actingRole, target.getRole());
 
         target.enable();
+
+        publish(actingTenantId, actorUserId, AuditAction.USER_ENABLED, target.getId(), "Enabled " + target.getEmail());
         return target;
     }
 
@@ -131,6 +150,10 @@ public class UserService {
         if (activeOwners <= 1) {
             throw new LastOwnerException();
         }
+    }
+
+    private void publish(UUID tenantId, UUID actorUserId, AuditAction action, UUID targetUserId, String detail) {
+        eventPublisher.publishEvent(new AuditEvent(tenantId, actorUserId, action, "USER", targetUserId, detail));
     }
 
     private String generateToken() {

@@ -24,7 +24,7 @@ public class WhatsAppConnectionController {
     @PostMapping
     public WhatsAppConnectionResponse connect(@AuthenticationPrincipal AuthenticatedPrincipal principal,
                                                @Valid @RequestBody ConnectWhatsAppRequest request) {
-        WhatsAppConnection connection = connectionService.connect(principal.getTenantId(), principal.getRole(),
+        WhatsAppConnection connection = connectionService.connect(principal.getTenantId(), principal.getUserId(), principal.getRole(),
                 request.phoneNumberId(), request.wabaId(), request.accessToken());
         return WhatsAppConnectionResponse.from(connection);
     }

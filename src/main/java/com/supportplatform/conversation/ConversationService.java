@@ -1,5 +1,7 @@
 package com.supportplatform.conversation;
 
+import com.supportplatform.audit.AuditAction;
+import com.supportplatform.audit.AuditEvent;
 import com.supportplatform.customer.CustomerService;
 import com.supportplatform.user.User;
 import com.supportplatform.user.UserRepository;
@@ -108,6 +110,8 @@ public class ConversationService {
 
         conversation.assign(targetAgentId);
         publishChanged(tenantId, conversation.getId());
+        eventPublisher.publishEvent(new AuditEvent(tenantId, actingUserId, AuditAction.CONVERSATION_ASSIGNED,
+                "CONVERSATION", conversation.getId(), "Assigned to " + target.getEmail()));
         return conversation;
     }
 
@@ -123,6 +127,8 @@ public class ConversationService {
 
         conversation.unassign();
         publishChanged(tenantId, conversation.getId());
+        eventPublisher.publishEvent(new AuditEvent(tenantId, actingUserId, AuditAction.CONVERSATION_UNASSIGNED,
+                "CONVERSATION", conversation.getId(), "Unassigned"));
         return conversation;
     }
 

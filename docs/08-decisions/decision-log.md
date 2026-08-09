@@ -465,3 +465,85 @@ concurrently — swap the `SimpleBroker` for a Redis- or RabbitMQ-backed
 STOMP relay at that point, not before. The event contract (§4 of
 `realtime-domain.md`) doesn't change; only the broker configuration
 does.
+
+---
+
+## ADR-019 — Audit logging: synchronous, same-transaction, not best-effort
+
+**Status:** Accepted
+
+### Context
+
+FR-AUD-001–003 require recording administrative actions, assignment
+changes, and configuration changes. Phase 7 just established a pattern
+for cross-module side effects on domain mutations — plain Spring
+application events, consumed by a listener that doesn't couple the
+publisher to the listener's mechanics. Audit logging looks like the
+same shape at first glance, which raises the question of whether it
+should copy Phase 7's specific timing choice (`AFTER_COMMIT`, failures
+swallowed) too, or make a different call.
+
+### Options Considered
+
+1. **Same as Phase 7: `@TransactionalEventListener(AFTER_COMMIT)`,
+   failures logged and swallowed.** Consistent with the realtime
+   pattern; an audit-write failure never affects the triggering
+   request.
+2. **Synchronous `@EventListener`, same transaction as the audited
+   action, failures propagate.** An audit-write failure rolls back the
+   whole transaction, including the business mutation it was recording.
+3. **Fire-and-forget to an external system** (a log aggregator, a
+   separate audit service). Decouples audit storage from the primary
+   database entirely.
+
+### Decision
+
+**Option 2.**
+
+### Rationale
+
+- The two use cases have opposite failure tolerances, even though the
+  publish mechanism looks identical. A lost realtime broadcast (Phase
+  7) is a UI-staleness problem — the dashboard is a few seconds behind,
+  self-corrects on next refresh, and Rule 2 already establishes
+  Postgres as authoritative regardless of what the socket delivered. A
+  lost audit record has no equivalent self-correction: the whole point
+  of FR-AUD is being able to prove *who* performed a sensitive action
+  after the fact. "The role change happened but no audit row exists"
+  is silent, undetectable at write time, and unrecoverable later.
+- Given that asymmetry, failing the original request when the audit
+  write fails (Option 2) is the *safer* default, not an overreaction —
+  an admin whose role-change request 500s can retry; a role change that
+  silently left no audit trail cannot be un-happened.
+- Option 1 would optimize for the wrong failure mode here: it protects
+  the *triggering* action from a notification-layer problem, which is
+  correct for realtime UX but backwards for compliance, where the
+  audit record's existence is the thing that must not be sacrificed.
+- Option 3 (external audit service/log aggregator) adds a real
+  infrastructure dependency and a second system that has to agree with
+  Postgres about what happened, for a scale of audit volume (a handful
+  of admin actions per tenant) that doesn't remotely justify it —
+  Rule 5. Revisit only if audit volume or a real compliance mandate
+  (e.g. write-once storage) demands it.
+
+### Consequences
+
+**Gain:** an audit row and its triggering action are atomic — either
+both are durable or neither is. No possible state where a sensitive
+action succeeded silently unaudited.
+
+**Sacrifice:** a transient problem purely in the audit write path
+(e.g. a full disk on the audit table, though it's the same table space
+as everything else so this is a shared-fate scenario, not a new one)
+now fails the business action too, where a best-effort design would
+have let the action through. Accepted: for the specific actions in
+scope (role changes, assignment changes, WhatsApp reconfiguration),
+correctness of the record outweighs availability of the action.
+
+### Revisit Conditions
+
+Revisit only if a specific audited action needs to remain available
+even when audit storage is degraded (e.g. an incident-response
+override) — that would need a per-action opt-out, not a global switch
+to best-effort, so the atomicity guarantee stays intact for everything
+that doesn't explicitly ask to weaken it.
