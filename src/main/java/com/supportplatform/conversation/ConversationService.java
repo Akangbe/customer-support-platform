@@ -5,6 +5,7 @@ import com.supportplatform.user.User;
 import com.supportplatform.user.UserRepository;
 import com.supportplatform.user.UserRole;
 import com.supportplatform.user.UserStatus;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
@@ -14,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
@@ -21,7 +23,10 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 /**
  * Conversation lifecycle and assignment (conversation-domain.md). Tenant
  * scoping is enforced here, not trusted from the caller — every lookup
- * goes through {@code findByIdAndTenantId}.
+ * goes through {@code findByIdAndTenantId}. Every state-changing method
+ * publishes {@link ConversationChangedEvent} — a plain Spring application
+ * event, so this service stays completely unaware that WebSocket exists
+ * (realtime-domain.md §4).
  */
 @Service
 public class ConversationService {
@@ -31,33 +36,41 @@ public class ConversationService {
     private final ConversationRepository conversationRepository;
     private final CustomerService customerService;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ConversationService(ConversationRepository conversationRepository, CustomerService customerService,
-                                UserRepository userRepository) {
+                                UserRepository userRepository, ApplicationEventPublisher eventPublisher) {
         this.conversationRepository = conversationRepository;
         this.customerService = customerService;
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
      * Idempotent (ADR-013): reuses the customer's active conversation if
      * one exists, else reopens their most recent closed one, else starts a
      * fresh one. This is what an agent starting a conversation manually
-     * calls today, and what Phase 6's WhatsApp webhook will call on every
-     * inbound message.
+     * calls today, and what the WhatsApp webhook calls on every inbound
+     * message (whatsapp-domain.md §4).
      */
     @Transactional
     public Conversation findOrOpenForCustomer(UUID tenantId, UUID customerId) {
         customerService.getWithinTenant(tenantId, customerId); // 404s if the customer doesn't exist in this tenant
 
-        return conversationRepository.findFirstByTenantIdAndCustomerIdAndStatusIn(tenantId, customerId, ACTIVE_STATUSES)
-                .orElseGet(() -> conversationRepository.findFirstByTenantIdAndCustomerIdAndStatusOrderByClosedAtDesc(
-                                tenantId, customerId, ConversationStatus.CLOSED)
-                        .map(c -> {
-                            c.reopen();
-                            return c;
-                        })
-                        .orElseGet(() -> conversationRepository.save(new Conversation(tenantId, customerId))));
+        Optional<Conversation> active = conversationRepository.findFirstByTenantIdAndCustomerIdAndStatusIn(tenantId, customerId, ACTIVE_STATUSES);
+        if (active.isPresent()) {
+            return active.get(); // no state change — nothing to publish
+        }
+
+        Conversation conversation = conversationRepository.findFirstByTenantIdAndCustomerIdAndStatusOrderByClosedAtDesc(
+                        tenantId, customerId, ConversationStatus.CLOSED)
+                .map(c -> {
+                    c.reopen();
+                    return c;
+                })
+                .orElseGet(() -> conversationRepository.save(new Conversation(tenantId, customerId)));
+        publishChanged(tenantId, conversation.getId());
+        return conversation;
     }
 
     @Transactional(readOnly = true)
@@ -94,6 +107,7 @@ public class ConversationService {
         }
 
         conversation.assign(targetAgentId);
+        publishChanged(tenantId, conversation.getId());
         return conversation;
     }
 
@@ -108,6 +122,7 @@ public class ConversationService {
         }
 
         conversation.unassign();
+        publishChanged(tenantId, conversation.getId());
         return conversation;
     }
 
@@ -115,6 +130,7 @@ public class ConversationService {
     public Conversation close(UUID tenantId, UUID conversationId) {
         Conversation conversation = getWithinTenant(tenantId, conversationId);
         conversation.close(Instant.now());
+        publishChanged(tenantId, conversation.getId());
         return conversation;
     }
 
@@ -122,6 +138,7 @@ public class ConversationService {
     public Conversation reopen(UUID tenantId, UUID conversationId) {
         Conversation conversation = getWithinTenant(tenantId, conversationId);
         conversation.reopen();
+        publishChanged(tenantId, conversation.getId());
         return conversation;
     }
 
@@ -129,7 +146,12 @@ public class ConversationService {
     public Conversation updatePriority(UUID tenantId, UUID conversationId, ConversationPriority priority) {
         Conversation conversation = getWithinTenant(tenantId, conversationId);
         conversation.changePriority(priority);
+        publishChanged(tenantId, conversation.getId());
         return conversation;
+    }
+
+    private void publishChanged(UUID tenantId, UUID conversationId) {
+        eventPublisher.publishEvent(new ConversationChangedEvent(tenantId, conversationId));
     }
 
     private boolean isPrivileged(UserRole role) {

@@ -17,6 +17,8 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
 
     Optional<Message> findByTenantIdAndWaMessageId(UUID tenantId, String waMessageId);
 
+    Optional<Message> findByIdAndTenantId(UUID id, UUID tenantId);
+
     /** Outbound rows the sender poller should attempt now (whatsapp-domain.md §6). */
     @Query("""
             SELECT m FROM Message m

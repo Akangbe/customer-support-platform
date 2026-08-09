@@ -6,6 +6,7 @@ import com.supportplatform.conversation.ConversationStatus;
 import com.supportplatform.conversation.InvalidConversationStateException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -19,12 +20,16 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
+import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 /**
  * Message persistence and the 24-hour service-window rule
  * (message-domain.md). Tenant scoping flows through
  * {@link ConversationService#getWithinTenant}, the same 404-on-guess
- * protection every other tenant-owned resource uses.
+ * protection every other tenant-owned resource uses. Every method that
+ * creates or transitions a message publishes {@link MessageEvent} — a
+ * plain Spring application event, so this service stays completely
+ * unaware that WebSocket exists (realtime-domain.md §4).
  */
 @Service
 public class MessageService {
@@ -34,10 +39,13 @@ public class MessageService {
 
     private final MessageRepository messageRepository;
     private final ConversationService conversationService;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public MessageService(MessageRepository messageRepository, ConversationService conversationService) {
+    public MessageService(MessageRepository messageRepository, ConversationService conversationService,
+                           ApplicationEventPublisher eventPublisher) {
         this.messageRepository = messageRepository;
         this.conversationService = conversationService;
+        this.eventPublisher = eventPublisher;
     }
 
     /** An agent replying free-form. Persists PENDING and stops there — the outbound sender (whatsapp-domain.md §6) is what actually reaches WhatsApp. */
@@ -76,7 +84,9 @@ public class MessageService {
                 ? Message.outboundTemplate(tenantId, conversationId, senderUserId, body, templateName, templateLanguageCode, templateParams)
                 : Message.outbound(tenantId, conversationId, senderUserId, body);
         conversation.recordOutboundAt(Instant.now());
-        return messageRepository.save(message);
+        message = messageRepository.save(message);
+        publishEvent(tenantId, conversationId, message.getId());
+        return message;
     }
 
     /**
@@ -107,7 +117,14 @@ public class MessageService {
                 case "sent" -> { /* already SENT when we dispatched it; nothing to do */ }
                 default -> log.warn("Unrecognized WhatsApp status '{}' for message {}", metaStatus, waMessageId);
             }
+            publishEvent(tenantId, message.getConversationId(), message.getId());
         }, () -> log.warn("Status webhook for unrecognized wa_message_id {} in tenant {}", waMessageId, tenantId));
+    }
+
+    @Transactional(readOnly = true)
+    public Message getWithinTenant(UUID tenantId, UUID messageId) {
+        return messageRepository.findByIdAndTenantId(messageId, tenantId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Message not found"));
     }
 
     private Message insertInbound(UUID tenantId, UUID conversationId, String waMessageId, String body) {
@@ -120,7 +137,12 @@ public class MessageService {
                     .orElseThrow(() -> raceLostToConcurrentDelivery);
         }
         conversation.recordInboundAt(Instant.now());
+        publishEvent(tenantId, conversationId, message.getId());
         return message;
+    }
+
+    private void publishEvent(UUID tenantId, UUID conversationId, UUID messageId) {
+        eventPublisher.publishEvent(new MessageEvent(tenantId, conversationId, messageId));
     }
 
     private boolean isWindowOpen(Conversation conversation) {

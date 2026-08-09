@@ -385,3 +385,83 @@ FR-CON-003 requires letting "authorized users" assign conversations, and FR-CON-
 ### Revisit Conditions
 
 Revisit if a tenant's workflow needs strict manager-mediated routing (e.g., skill-based routing where self-claim would cause misrouting) — at that point, make self-claim configurable per tenant rather than changing the global default.
+
+---
+
+## ADR-018 — Realtime transport: in-memory STOMP broker, not Redis-backed
+
+**Status:** Accepted
+
+### Context
+
+FR-RT-001–003 need conversation and message changes to reach the
+dashboard without a refresh. `system-architecture.md` already names
+Redis as the store for "agent presence, WebSocket session data,
+conversation claim-locks" — ephemeral, never authoritative — which
+raises the question of whether Phase 7's realtime fan-out should be
+Redis-backed (a STOMP relay to Redis pub/sub, so any backend instance
+can deliver to any connected client) from the start, or something
+simpler.
+
+### Options Considered
+
+1. **Spring's built-in in-memory `SimpleBroker`.** STOMP subscription
+   management and message routing all run in-process; zero new
+   infrastructure.
+2. **Redis-backed STOMP relay** (or a RabbitMQ STOMP broker). Any
+   backend instance can publish an event that reaches a client
+   connected to a *different* instance — required for horizontal
+   scaling.
+3. **Long-polling / Server-Sent Events instead of WebSocket.** Avoids
+   the WebSocket upgrade entirely.
+
+### Decision
+
+**Option 1** — the in-memory `SimpleBroker`, for the same single-instance
+reasoning ADR-014 already applied to sessions ("horizontal scaling...
+needs a shared session store... not needed for Phase A").
+
+### Rationale
+
+- This is a single Spring Boot instance today (`system-architecture.md`
+  §7 — no Kubernetes, no service mesh on day one). A message published
+  in-process reaches every client connected to that same process,
+  which is every client there is right now. Option 2 solves a problem
+  — "the client is connected to a different instance than the one that
+  published the event" — that cannot occur yet.
+- Standing up Redis-backed STOMP relay now would be exactly the
+  premature-infrastructure mistake Rule 5 exists to block: real cost
+  (a new store dependency, relay configuration, another thing that can
+  fail) for a scaling need with no current measurement behind it.
+- Option 3 (SSE/long-polling) gives up bidirectional framing and
+  Spring's built-in STOMP subscription/topic model for no benefit here
+  — nothing in Phase 7 needs the client to push anything over the
+  realtime channel (replies still go through the REST API), so
+  WebSocket's extra capability isn't wasted, and STOMP's topic model is
+  a better fit for "broadcast to everyone subscribed to this tenant"
+  than reimplementing routing on top of raw SSE.
+- Redis is already approved in this project for exactly this future
+  need (`system-architecture.md` §2) — this ADR doesn't reject Redis,
+  it defers turning it on until more than one backend instance is
+  actually running.
+
+### Consequences
+
+**Gain:** zero new infrastructure to deploy, operate, or fail for
+Phase 7; Spring's STOMP support handles subscription management and
+heartbeats without custom code.
+
+**Sacrifice:** the moment a second backend instance runs (real
+horizontal scaling), a client connected to instance A will silently
+miss an event published by instance B — the in-memory broker has no
+cross-instance awareness. This is a hard requirement to catch before
+scaling out, not a gradual degradation, so it must be revisited
+deliberately rather than discovered in production.
+
+### Revisit Conditions
+
+Revisit the moment more than one backend instance is planned to run
+concurrently — swap the `SimpleBroker` for a Redis- or RabbitMQ-backed
+STOMP relay at that point, not before. The event contract (§4 of
+`realtime-domain.md`) doesn't change; only the broker configuration
+does.
