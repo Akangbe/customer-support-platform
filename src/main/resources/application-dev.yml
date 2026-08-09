@@ -4,6 +4,12 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
 
+app:
+  whatsapp:
+    verify-token: ${WHATSAPP_VERIFY_TOKEN}
+    app-secret: ${WHATSAPP_APP_SECRET}
+    credential-encryption-key: ${WHATSAPP_CREDENTIAL_ENCRYPTION_KEY}
+
 management:
   endpoint:
     health:

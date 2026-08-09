@@ -6,13 +6,94 @@ Every significant architectural decision lives here (Architecture Principles, Ru
 
 ## ADR-011 — Phased Meta onboarding
 
-**Status:** Referenced elsewhere as Accepted — original ADR body not recovered
+**Status:** Accepted
 
-During the Phase 0 repository audit (2026-08-09) this decision was found cited by `README.md` and `whatsapp-integration.md` as an accepted, load-bearing decision, but no file containing its full ADR body (Context / Options / Rationale) exists anywhere in the repository or its build output. Per instruction, it has not been reconstructed or guessed at.
+### Context
 
-The decision itself is **not lost** — it is fully specified operationally in [`whatsapp-integration.md` §1–2](../03-architecture/whatsapp-integration.md#1-the-provider-status-fork-the-thing-most-people-miss): launch on RitaRock in direct-developer mode (single owned WABA, no App Review) while pursuing Tech Provider status in parallel, flipping on multi-tenant onboarding once App Review clears. That document is the authoritative reference until this entry is properly ratified.
+The product vision is multi-tenant Tech Provider access — connecting
+*other businesses'* WhatsApp Business Accounts, not just our own. Meta
+gates that behind App Review and Advanced Access for
+`whatsapp_business_messaging`/`whatsapp_business_management`, a
+weeks-long review that can fail and that we do not control the
+timeline of. Waiting on it before building or launching anything would
+tie the entire project's first release date to a third party's queue.
+RitaRock EduConsult, the first tenant, is a business we already have a
+direct relationship with and can onboard without going through another
+company's WABA at all. This decision was flagged since the Phase 0
+audit as needing its full body authored before Phase 6 (WhatsApp
+Integration) began, since Phase 6 is where the onboarding mode this ADR
+picks actually gets built.
 
-**Action:** author the full ADR body here before Phase 6 (WhatsApp Integration) begins, so the trade-offs are captured formally rather than only operationally.
+### Options Considered
+
+1. **Wait for Tech Provider approval before building anything
+   WhatsApp-related.** Simplest sequencing, but blocks all progress on
+   an external, unpredictable timeline.
+2. **Launch Phase A on RitaRock in direct-developer mode** (one owned
+   WABA, System User token, no App Review needed) to prove the full
+   product loop end-to-end, while submitting for Tech Provider / App
+   Review **in parallel** (Phase B), and flipping on multi-tenant
+   onboarding once approved (Phase C).
+3. **Build a mock/stub WhatsApp integration** for development and defer
+   all real Meta integration until Tech Provider status clears.
+
+### Decision
+
+**Option 2** — phased rollout: Phase A (direct-developer, RitaRock only)
+now, Phase B (App Review submission) in parallel, Phase C (multi-tenant
+onboarding) once approved. Critically, the **code is multi-tenant from
+day one** regardless of phase — `WhatsAppConnection` is a tenant-scoped
+table from its first migration (`whatsapp-domain.md` §2), not a
+RitaRock-specific hardcoded config. Only the *onboarding path* differs
+between phases: in Phase A, a `WhatsAppConnection` row is created by an
+Owner/Admin pasting credentials generated manually in Meta Business
+Manager; in Phase C, the same row is populated by the output of
+Embedded Signup instead. The rest of the system — webhook processing,
+tenant resolution, sending, status tracking — never needs to know which
+phase produced the row it's reading.
+
+### Rationale
+
+- Option 1 makes the entire roadmap hostage to Meta's review queue,
+  which can take weeks and can fail outright — unacceptable for
+  proving out a real product with a real business waiting.
+- Option 3 (mocking Meta entirely) means the riskiest, least-controlled
+  part of the system (per `whatsapp-integration.md`'s own framing:
+  "the highest-risk part of the system") gets validated last, not
+  first — backwards. Real webhook signature verification, real
+  message-status timing, and real API failure modes need a real
+  integration exercised as early as possible, and RitaRock is exactly
+  the willing real business that makes that possible without App
+  Review.
+- Building the data model tenant-scoped from the start (rather than
+  RitaRock-specific now, generalized later) means Phase C is a change
+  to *how a row is created*, not a schema migration and a rewrite of
+  every module that reads `WhatsAppConnection` — the multi-tenant
+  shape was nearly free to build correctly the first time and would
+  have been real rework to retrofit.
+
+### Consequences
+
+**Gain:** the product ships and gets validated against a real WhatsApp
+Business Account immediately, independent of Meta's review timeline;
+the Tech Provider submission can proceed in parallel without blocking
+anything; Phase C requires no data-model changes, only a new onboarding
+UI/flow (Embedded Signup) that populates the same table a manual form
+populates today.
+
+**Sacrifice:** until Phase C, the platform can only serve tenants
+willing to generate and hand over their own System User token manually
+— real friction for onboarding a second or third tenant business before
+Tech Provider status clears. Accepted as a bounded, known limitation of
+Phase A, not a permanent one.
+
+### Revisit Conditions
+
+Revisit if App Review is denied or indefinitely delayed — at that
+point, evaluate whether a semi-manual onboarding flow (Owner/Admin
+still pastes credentials, like Phase A, but formalized as the permanent
+onboarding path rather than a stopgap) is an acceptable long-term
+compromise for growing beyond RitaRock without Tech Provider status.
 
 ---
 

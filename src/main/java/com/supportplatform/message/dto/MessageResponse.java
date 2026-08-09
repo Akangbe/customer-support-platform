@@ -14,6 +14,7 @@ public record MessageResponse(
         MessageStatus status,
         String body,
         UUID senderUserId,
+        String failureReason,
         Instant createdAt
 ) {
     public static MessageResponse from(Message message) {
@@ -24,6 +25,7 @@ public record MessageResponse(
                 message.getStatus(),
                 message.getBody(),
                 message.getSenderUserId(),
+                message.getFailureReason(),
                 message.getCreatedAt()
         );
     }

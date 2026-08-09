@@ -35,7 +35,8 @@ public class MessageController {
                                  @PathVariable UUID conversationId,
                                  @Valid @RequestBody SendMessageRequest request) {
         Message message = messageService.sendOutbound(principal.getTenantId(), conversationId,
-                principal.getUserId(), request.body());
+                principal.getUserId(), request.body(), request.templateName(), request.templateLanguageCode(),
+                request.templateParams());
         return MessageResponse.from(message);
     }
 

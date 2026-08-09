@@ -86,6 +86,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/register-tenant",
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/accept-invite",
+                                "/api/v1/whatsapp/webhook",
                                 "/actuator/health",
                                 "/actuator/info"
                         ).permitAll()
