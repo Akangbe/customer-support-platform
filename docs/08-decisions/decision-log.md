@@ -62,3 +62,113 @@ The decision is fully specified operationally in [`architecture-principles.md` R
 ### Revisit Conditions
 
 Revisit if a real tenant asks for strict per-incident conversation boundaries (e.g., billing or reporting tied to discrete "tickets" rather than continuous threads) — at that point Option 3 becomes justified by actual demand rather than speculation.
+
+---
+
+## ADR-014 — Session-based authentication, not JWT
+
+**Status:** Accepted
+
+### Context
+
+Phase 2 needs to pick how users authenticate (FR-AUTH-001). The backend is a single deployable modular monolith; the frontend is a separate Next.js origin calling it as a REST API. No external third-party API consumers are in scope.
+
+### Options Considered
+
+1. **Server-side session + HttpOnly cookie**, via Spring Security's built-in session management.
+2. **Stateless JWT** (access + refresh tokens), validated per-request without server-side state.
+3. **OAuth2/OIDC via an external identity provider.**
+
+### Decision
+
+**Option 1 — session-based authentication** with an HttpOnly, Secure, SameSite=Lax cookie.
+
+### Rationale
+
+- Single deployable, no cross-service token validation to support — the usual argument for stateless JWTs (independent services validating tokens without a shared session store) doesn't apply here.
+- Revocation is immediate and simple: logout invalidates the session server-side. A compromised or leaked JWT is valid until expiry unless a blocklist is built and checked on every request — extra machinery with no current justification.
+- No token sitting in `localStorage`/JS-accessible storage, removing a common XSS exfiltration target.
+- Phase 7 (Realtime/WebSocket) can authenticate the upgrade handshake with the same cookie, no separate token-passing scheme needed.
+- Option 3 (OIDC) solves a problem we don't have (no external IdP requirement, no "log in with Google" ask) and adds a real integration to maintain for no current benefit.
+
+### Consequences
+
+**Gain:** simplest secure default for a single-origin-consuming-API web dashboard; trivial logout semantics; no client-side token storage/refresh logic to write and maintain.
+
+**Sacrifice:** horizontal scaling to multiple backend instances needs a shared session store (Spring Session + Redis — Redis is already an approved ephemeral store per `architecture-principles.md`) once real load justifies running more than one instance; not needed for Phase A. A future native mobile agent app would likely prefer tokens, but none is in scope — Product Vision keeps customers WhatsApp-only and agents on the web dashboard.
+
+### Revisit Conditions
+
+Revisit — for the specific client that needs it, not system-wide — if we ever ship a public third-party API or a native mobile app that can't hold cookies naturally.
+
+---
+
+## ADR-015 — Globally unique email; one tenant per user
+
+**Status:** Accepted
+
+### Context
+
+FR-AUTH-002 requires binding every authenticated user to exactly one tenant. This decision determines the scope of email uniqueness and, as a direct consequence, whether login needs a tenant-selection step.
+
+### Options Considered
+
+1. **Globally unique email.** One `User` row per person, system-wide; that row belongs to exactly one tenant. Login is plain email + password.
+2. **Per-tenant unique email.** The same email can have separate `User` rows in different tenants. Login needs a way to pick which tenant's account to authenticate against (subdomain, slug, or a picker screen).
+3. **Full membership model.** Identity separated from tenant membership via a many-to-many join, so one identity can hold different roles in different tenants simultaneously.
+
+### Decision
+
+**Option 1 — globally unique email, one tenant per user.**
+
+### Rationale
+
+- Matches FR-AUTH-002's literal wording most directly: a user *is* one identity bound to one tenant, not a login shared across memberships.
+- Keeps the login flow trivial — no tenant-selection UI, which particularly matters given Phase A (ADR-011) is a single tenant anyway.
+- Option 3 is real, validated-nowhere complexity — no requirement or product signal asks for one person operating across multiple tenant businesses under one identity (Rule 5).
+
+### Consequences
+
+**Gain:** simplest possible login and account model; the `email` column alone is enough to resolve a user, with no ambiguity.
+
+**Sacrifice:** the same person cannot be an agent at two different tenant businesses on the platform using one email address — they would sign up with a second email for a second tenant. Accepted as a standard, well-understood trade-off for a v1 B2B SaaS product.
+
+### Revisit Conditions
+
+Revisit toward a membership model only if a real tenant needs one person to hold accounts across multiple tenants under a single identity — not before.
+
+---
+
+## ADR-016 — Owner/Admin privilege boundary and the last-Owner invariant
+
+**Status:** Accepted
+
+### Context
+
+RBAC needs a concrete rule for who can manage whom. Left undefined, two failure modes are easy to hit by accident: an Admin quietly promoting themselves to Owner (privilege escalation), or a tenant ending up with zero Owners (nobody left who can manage the workspace).
+
+### Options Considered
+
+1. **Flat rule:** any of Owner/Admin can manage any user, including other Owners/Admins.
+2. **Privilege boundary:** Admin manages only the operational roles (Manager, Agent); only an Owner can manage Owner/Admin accounts. Plus: a tenant may never be left with zero Owners.
+3. **No enforcement**, rely on UI-level hiding of dangerous actions only.
+
+### Decision
+
+**Option 2.** Admin can invite, view, and disable Manager/Agent users. Only an Owner can invite, view, disable, or change the role of an Owner or Admin account. Every role-change or disable operation checks, in the application layer, that it would not leave the tenant with zero `OWNER` users — that operation is rejected if so.
+
+### Rationale
+
+- Removes a direct self-escalation path (an Admin cannot make themselves — or a collaborator — an Owner or Admin).
+- The last-Owner check prevents a tenant from being permanently locked out of its own workspace administration, which would otherwise require manual database intervention to fix.
+- Option 3 is not real enforcement (Section 17 — security must be enforced server-side, never UI-only).
+
+### Consequences
+
+**Gain:** a clear, small authorization surface for user management (two tiers: Owner-only actions, Owner-or-Admin actions) and a structural guarantee against workspace lockout.
+
+**Sacrifice:** Postgres cannot express "at least one row of this kind" as a declarative constraint, so this invariant lives in application code and must be checked on every relevant mutation path (role change, disable) — it is not free, and any new path that mutates a user's role/status must remember to include this check.
+
+### Revisit Conditions
+
+Revisit if a tenant legitimately needs co-equal Owners with no hierarchy distinction from Admins — not currently requested, and the current model already allows multiple Owners.

@@ -1,3 +1,4 @@
+
 # Product Vision
 
 **Status:** Accepted · v0.1
