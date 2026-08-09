@@ -9,9 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MvcResult;
-import tools.jackson.databind.JsonNode;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -90,7 +88,7 @@ class UserManagementTest extends AbstractIntegrationTest {
         MockHttpSession owner = registerTenantAndGetSession("Boundary Co 3", "Boundary Owner 3", "boundary-owner-3@example.com", "password123");
         MockHttpSession admin = inviteActivateAndLogin(owner, "boundary-admin-3@example.com", "Boundary Admin 3", UserRole.ADMIN, "admin-password123");
 
-        String ownerId = extractId(owner);
+        String ownerId = extractUserId(owner);
 
         mockMvc.perform(post("/api/v1/users/" + ownerId + "/disable").session(admin))
                 .andExpect(status().isForbidden());
@@ -105,7 +103,7 @@ class UserManagementTest extends AbstractIntegrationTest {
     @Test
     void theLastOwnerCannotBeDisabledOrDemoted() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Last Owner Co", "Last Owner", "last-owner-1@example.com", "password123");
-        String ownerId = extractId(owner);
+        String ownerId = extractUserId(owner);
 
         mockMvc.perform(post("/api/v1/users/" + ownerId + "/disable").session(owner))
                 .andExpect(status().isConflict());
@@ -121,40 +119,10 @@ class UserManagementTest extends AbstractIntegrationTest {
     void aSecondOwnerCanBeDemotedOrDisabled() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Second Owner Co", "First Owner", "second-owner-1@example.com", "password123");
         MockHttpSession secondOwner = inviteActivateAndLogin(owner, "second-owner-2@example.com", "Second Owner", UserRole.OWNER, "owner2-password123");
-        String secondOwnerId = extractId(secondOwner);
+        String secondOwnerId = extractUserId(secondOwner);
 
         mockMvc.perform(post("/api/v1/users/" + secondOwnerId + "/disable").session(owner))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DISABLED"));
-    }
-
-    private MockHttpSession inviteActivateAndLogin(MockHttpSession inviterSession, String email, String name,
-                                                     UserRole role, String password) throws Exception {
-        MvcResult inviteResult = mockMvc.perform(post("/api/v1/users/invite")
-                        .session(inviterSession)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new InviteUserRequest(email, name, role))))
-                .andExpect(status().isCreated())
-                .andReturn();
-        String token = objectMapper.readTree(inviteResult.getResponse().getContentAsString()).get("inviteToken").asText();
-
-        mockMvc.perform(post("/api/v1/auth/accept-invite")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new AcceptInviteRequest(token, password))))
-                .andExpect(status().isOk());
-
-        MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new LoginRequest(email, password))))
-                .andExpect(status().isOk())
-                .andReturn();
-
-        return (MockHttpSession) loginResult.getRequest().getSession();
-    }
-
-    private String extractId(MockHttpSession session) throws Exception {
-        var result = mockMvc.perform(get("/api/v1/users/me").session(session)).andReturn();
-        JsonNode node = objectMapper.readTree(result.getResponse().getContentAsString());
-        return node.get("id").asText();
     }
 }

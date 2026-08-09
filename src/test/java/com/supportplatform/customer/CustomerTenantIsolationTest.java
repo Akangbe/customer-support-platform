@@ -6,8 +6,6 @@ import com.supportplatform.customer.dto.UpdateCustomerRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
-import org.springframework.test.web.servlet.MvcResult;
-import tools.jackson.databind.JsonNode;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -65,16 +63,5 @@ class CustomerTenantIsolationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new UpdateCustomerRequest("Renamed"))))
                 .andExpect(status().isNotFound());
-    }
-
-    private String createCustomer(MockHttpSession session, String phone, String name) throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/v1/customers")
-                        .session(session)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreateCustomerRequest(phone, name))))
-                .andExpect(status().isCreated())
-                .andReturn();
-        JsonNode node = objectMapper.readTree(result.getResponse().getContentAsString());
-        return node.get("id").asText();
     }
 }

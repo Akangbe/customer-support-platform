@@ -4,7 +4,6 @@ import com.supportplatform.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
-import tools.jackson.databind.JsonNode;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -43,7 +42,7 @@ class TenantIsolationTest extends AbstractIntegrationTest {
         MockHttpSession sessionA = registerTenantAndGetSession("Tenant C", "Owner C", "isolation-owner-c@example.com", "password123");
         MockHttpSession sessionB = registerTenantAndGetSession("Tenant D", "Owner D", "isolation-owner-d@example.com", "password123");
 
-        String ownerBId = extractId(sessionB);
+        String ownerBId = extractUserId(sessionB);
 
         mockMvc.perform(post("/api/v1/users/" + ownerBId + "/disable").session(sessionA))
                 .andExpect(status().isNotFound());
@@ -54,18 +53,12 @@ class TenantIsolationTest extends AbstractIntegrationTest {
         MockHttpSession sessionA = registerTenantAndGetSession("Tenant E", "Owner E", "isolation-owner-e@example.com", "password123");
         MockHttpSession sessionB = registerTenantAndGetSession("Tenant F", "Owner F", "isolation-owner-f@example.com", "password123");
 
-        String ownerBId = extractId(sessionB);
+        String ownerBId = extractUserId(sessionB);
 
         mockMvc.perform(patch("/api/v1/users/" + ownerBId + "/role")
                         .session(sessionA)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\":\"AGENT\"}"))
                 .andExpect(status().isNotFound());
-    }
-
-    private String extractId(MockHttpSession session) throws Exception {
-        var result = mockMvc.perform(get("/api/v1/users/me").session(session)).andReturn();
-        JsonNode node = objectMapper.readTree(result.getResponse().getContentAsString());
-        return node.get("id").asText();
     }
 }

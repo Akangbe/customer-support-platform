@@ -172,3 +172,40 @@ RBAC needs a concrete rule for who can manage whom. Left undefined, two failure 
 ### Revisit Conditions
 
 Revisit if a tenant legitimately needs co-equal Owners with no hierarchy distinction from Admins — not currently requested, and the current model already allows multiple Owners.
+
+---
+
+## ADR-017 — Conversation assignment: self-claim + privileged reassignment
+
+**Status:** Accepted
+
+### Context
+
+FR-CON-003 requires letting "authorized users" assign conversations, and FR-CON-007 wants to prevent two agents from silently working the same conversation at once. Product Vision assigns "assign work" to the Support Manager role specifically, while the Support Agent's listed duty is "see assigned chats, reply" — the docs don't say outright whether an Agent may claim unassigned work for themselves.
+
+### Options Considered
+
+1. **Manager/Admin/Owner-only assignment** — Agents never self-assign; all work is routed to them by a human (or, later, automatic routing).
+2. **Self-claim + privileged reassignment** — any authenticated tenant member can claim an unassigned conversation for themselves; assigning to someone else, or reassigning an already-claimed conversation, requires Owner, Admin, or Manager.
+3. **Fully open** — anyone can assign or reassign to anyone at any time.
+
+### Decision
+
+**Option 2.**
+
+### Rationale
+
+- Matches how support tools commonly work (Zendesk/Intercom-style "claim" patterns) — an idle agent picking up open work is normal, healthy behavior that shouldn't need manager gatekeeping.
+- Directly addresses the coarse-grained collision case FR-CON-007 cares about at this phase: claiming a conversation is exactly the act that marks it "already someone's," so two agents can't both start working something nobody had picked up. (The finer-grained "both hit send in the same instant" case is Phase 5's Redis-lock territory — see `conversation-domain.md` §1.)
+- Reassignment — moving a conversation that's already someone's — is the case that actually needs oversight; an agent quietly grabbing a peer's work would undermine accountability, so it's gated to Owner/Admin/Manager.
+- Option 1 adds friction with no requirement backing it. Option 3 removes the one place accountability actually matters.
+
+### Consequences
+
+**Gain:** agents self-serve idle work without waiting on a manager; reassignment still has a clear approval boundary; no schema complexity (single `assigned_agent_id` column is enough).
+
+**Sacrifice:** none significant — this is a low-risk, easily-revisited authorization rule with no data-model implications.
+
+### Revisit Conditions
+
+Revisit if a tenant's workflow needs strict manager-mediated routing (e.g., skill-based routing where self-claim would cause misrouting) — at that point, make self-claim configurable per tenant rather than changing the global default.
