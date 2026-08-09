@@ -14,10 +14,11 @@ public record MessageResponse(
         MessageStatus status,
         String body,
         UUID senderUserId,
+        UUID attachmentId,
         String failureReason,
         Instant createdAt
 ) {
-    public static MessageResponse from(Message message) {
+    public static MessageResponse from(Message message, UUID attachmentId) {
         return new MessageResponse(
                 message.getId(),
                 message.getConversationId(),
@@ -25,6 +26,7 @@ public record MessageResponse(
                 message.getStatus(),
                 message.getBody(),
                 message.getSenderUserId(),
+                attachmentId,
                 message.getFailureReason(),
                 message.getCreatedAt()
         );

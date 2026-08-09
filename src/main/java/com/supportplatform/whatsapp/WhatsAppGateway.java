@@ -1,5 +1,6 @@
 package com.supportplatform.whatsapp;
 
+import java.net.URI;
 import java.util.List;
 
 /**
@@ -14,4 +15,10 @@ public interface WhatsAppGateway {
 
     SendResult sendTemplate(WhatsAppConnection connection, String toPhone, String templateName,
                              String languageCode, List<String> params);
+
+    /** Link-based, not upload-first (ADR-020) — {@code link} is a short-lived presigned storage URL Meta fetches itself. */
+    SendResult sendMedia(WhatsAppConnection connection, String toPhone, String mediaType, URI link, String caption);
+
+    /** Two Meta calls under the hood (resolve a temporary download URL, then fetch it) — storage-domain.md §6. */
+    DownloadedMedia downloadMedia(WhatsAppConnection connection, String mediaId);
 }

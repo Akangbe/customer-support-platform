@@ -4,6 +4,8 @@ import com.supportplatform.conversation.Conversation;
 import com.supportplatform.conversation.ConversationService;
 import com.supportplatform.conversation.ConversationStatus;
 import com.supportplatform.conversation.InvalidConversationStateException;
+import com.supportplatform.storage.Attachment;
+import com.supportplatform.storage.AttachmentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -20,6 +22,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
+import static org.springframework.http.HttpStatus.CONFLICT;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 /**
@@ -39,19 +42,21 @@ public class MessageService {
 
     private final MessageRepository messageRepository;
     private final ConversationService conversationService;
+    private final AttachmentService attachmentService;
     private final ApplicationEventPublisher eventPublisher;
 
     public MessageService(MessageRepository messageRepository, ConversationService conversationService,
-                           ApplicationEventPublisher eventPublisher) {
+                           AttachmentService attachmentService, ApplicationEventPublisher eventPublisher) {
         this.messageRepository = messageRepository;
         this.conversationService = conversationService;
+        this.attachmentService = attachmentService;
         this.eventPublisher = eventPublisher;
     }
 
     /** An agent replying free-form. Persists PENDING and stops there — the outbound sender (whatsapp-domain.md §6) is what actually reaches WhatsApp. */
     @Transactional
     public Message sendOutbound(UUID tenantId, UUID conversationId, UUID senderUserId, String body) {
-        return sendOutbound(tenantId, conversationId, senderUserId, body, null, null, List.of());
+        return sendOutbound(tenantId, conversationId, senderUserId, body, null, null, List.of(), null);
     }
 
     /**
@@ -64,9 +69,27 @@ public class MessageService {
     @Transactional
     public Message sendOutbound(UUID tenantId, UUID conversationId, UUID senderUserId, String body,
                                  String templateName, String templateLanguageCode, List<String> templateParams) {
+        return sendOutbound(tenantId, conversationId, senderUserId, body, templateName, templateLanguageCode, templateParams, null);
+    }
+
+    /**
+     * Same as above, plus an optional {@code attachmentId} (storage-domain.md
+     * §4) — WhatsApp allows a media message with no caption, so {@code body}
+     * alone is no longer required; a request with neither body, template,
+     * nor attachment is rejected.
+     */
+    @Transactional
+    public Message sendOutbound(UUID tenantId, UUID conversationId, UUID senderUserId, String body,
+                                 String templateName, String templateLanguageCode, List<String> templateParams,
+                                 UUID attachmentId) {
         if (templateName != null && (templateLanguageCode == null || templateLanguageCode.isBlank())) {
             throw new ResponseStatusException(BAD_REQUEST, "templateLanguageCode is required when templateName is provided");
         }
+        if (attachmentId == null && templateName == null && (body == null || body.isBlank())) {
+            throw new ResponseStatusException(BAD_REQUEST, "A message needs a body, a template, or an attachment");
+        }
+        // body is NOT NULL at the DB level; a no-caption media send normalizes to "", matching the inbound convention (whatsapp-domain.md).
+        String normalizedBody = body == null ? "" : body;
 
         Conversation conversation = conversationService.getWithinTenant(tenantId, conversationId);
 
@@ -80,11 +103,21 @@ public class MessageService {
                     "Outside the 24-hour customer-service window; a template message is required");
         }
 
+        Attachment attachment = attachmentId == null ? null : attachmentService.getWithinTenant(tenantId, attachmentId);
+        if (attachment != null && attachment.getMessageId() != null) {
+            throw new ResponseStatusException(CONFLICT, "This attachment is already linked to a message");
+        }
+
         Message message = templateName != null
-                ? Message.outboundTemplate(tenantId, conversationId, senderUserId, body, templateName, templateLanguageCode, templateParams)
-                : Message.outbound(tenantId, conversationId, senderUserId, body);
+                ? Message.outboundTemplate(tenantId, conversationId, senderUserId, normalizedBody, templateName, templateLanguageCode, templateParams)
+                : Message.outbound(tenantId, conversationId, senderUserId, normalizedBody);
         conversation.recordOutboundAt(Instant.now());
         message = messageRepository.save(message);
+
+        if (attachment != null) {
+            attachment.linkToMessage(message.getId());
+        }
+
         publishEvent(tenantId, conversationId, message.getId());
         return message;
     }
@@ -119,6 +152,12 @@ public class MessageService {
             }
             publishEvent(tenantId, message.getConversationId(), message.getId());
         }, () -> log.warn("Status webhook for unrecognized wa_message_id {} in tenant {}", waMessageId, tenantId));
+    }
+
+    /** A cheap existence check for the inbound media path (storage-domain.md §6) — lets the caller skip a download/upload entirely on a redelivered event, before recordInbound's own dedupe would otherwise run. */
+    @Transactional(readOnly = true)
+    public boolean existsByWaMessageId(UUID tenantId, String waMessageId) {
+        return messageRepository.existsByTenantIdAndWaMessageId(tenantId, waMessageId);
     }
 
     @Transactional(readOnly = true)

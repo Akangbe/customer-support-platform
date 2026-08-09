@@ -9,8 +9,11 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import tools.jackson.databind.JsonNode;
 
+import java.net.URI;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The only class in the codebase allowed to know Meta's request/response
@@ -23,6 +26,7 @@ import java.util.Map;
 public class MetaWhatsAppGateway implements WhatsAppGateway {
 
     private static final Logger log = LoggerFactory.getLogger(MetaWhatsAppGateway.class);
+    private static final Set<String> CAPTIONABLE_MEDIA_TYPES = Set.of("image", "video", "document");
 
     private final RestClient restClient;
 
@@ -62,6 +66,46 @@ public class MetaWhatsAppGateway implements WhatsAppGateway {
                 "template", template
         );
         return send(connection, payload);
+    }
+
+    @Override
+    public SendResult sendMedia(WhatsAppConnection connection, String toPhone, String mediaType, URI link, String caption) {
+        Map<String, Object> mediaObject = new HashMap<>();
+        mediaObject.put("link", link.toString());
+        if (caption != null && !caption.isBlank() && CAPTIONABLE_MEDIA_TYPES.contains(mediaType)) {
+            mediaObject.put("caption", caption);
+        }
+
+        Map<String, Object> payload = Map.of(
+                "messaging_product", "whatsapp",
+                "to", toPhone,
+                "type", mediaType,
+                mediaType, mediaObject
+        );
+        return send(connection, payload);
+    }
+
+    @Override
+    public DownloadedMedia downloadMedia(WhatsAppConnection connection, String mediaId) {
+        JsonNode metadata = restClient.get()
+                .uri(graphApiBaseUrl + "/" + mediaId)
+                .header("Authorization", "Bearer " + connection.getAccessToken())
+                .retrieve()
+                .body(JsonNode.class);
+
+        String downloadUrl = metadata == null ? null : metadata.path("url").asText(null);
+        if (downloadUrl == null) {
+            throw new IllegalStateException("WhatsApp media metadata did not contain a download url for " + mediaId);
+        }
+        String contentType = metadata.path("mime_type").asText("application/octet-stream");
+
+        byte[] content = restClient.get()
+                .uri(downloadUrl)
+                .header("Authorization", "Bearer " + connection.getAccessToken())
+                .retrieve()
+                .body(byte[].class);
+
+        return new DownloadedMedia(content, contentType);
     }
 
     private SendResult send(WhatsAppConnection connection, Map<String, Object> payload) {

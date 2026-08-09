@@ -547,3 +547,76 @@ even when audit storage is degraded (e.g. an incident-response
 override) — that would need a per-action opt-out, not a global switch
 to best-effort, so the atomicity guarantee stays intact for everything
 that doesn't explicitly ask to weaken it.
+
+---
+
+## ADR-020 — WhatsApp media: link-based sending, not upload-to-Meta-first
+
+**Status:** Accepted
+
+### Context
+
+FR-MSG-005's media half needs a way to get an agent-attached file to a
+customer over WhatsApp. Meta's Cloud API supports two ways to send
+media in an outbound message: reference a `media_id` obtained by
+uploading the bytes to Meta first (`POST /{phone-number-id}/media`),
+or supply a `link` — a plain HTTPS URL — that Meta fetches itself at
+send time. Both are fully supported; nothing about FR-MSG-005 or
+`whatsapp-domain.md` picks one, so it needs deciding here.
+
+### Options Considered
+
+1. **Link-based.** Generate a short-lived presigned R2 URL for the
+   attachment and pass it as `link`; Meta fetches the bytes.
+2. **Upload-first.** Download the attachment from R2 ourselves, `POST`
+   its bytes to Meta's media endpoint to obtain a `media_id`, then
+   reference that id in the outbound message.
+3. **Hybrid**: upload-first for larger files, link for smaller ones.
+
+### Decision
+
+**Option 1** — link-based, using `StorageGateway.generatePresignedGetUrl`.
+
+### Rationale
+
+- Option 1 needs one Meta API call per send (the message itself);
+  Option 2 needs two (upload, then send) plus a round-trip through our
+  own backend to fetch the bytes from R2 before re-uploading them to
+  Meta — real latency and complexity for no behavioral gain here.
+- `StorageGateway.generatePresignedGetUrl` (storage-domain.md §3)
+  already exists as a first-class capability for the read endpoint
+  (§7) — Option 1 reuses it directly rather than adding a second,
+  upload-shaped integration surface to `WhatsAppGateway`.
+- The exposure window a presigned URL represents is small and
+  deliberate: short TTL (default 15 minutes, configurable), scoped to
+  one object, and only Meta's servers are ever given the URL — never
+  the customer or a third party. This is a materially smaller
+  attack surface than, say, a permanently public bucket, and is the
+  same trust boundary already accepted for the dashboard's own
+  attachment-viewing flow (§7).
+- Option 3 (hybrid) adds a size-based branch and two code paths to
+  maintain for a performance concern that hasn't been measured —
+  exactly the kind of premature complexity Rule 5 blocks. If link-based
+  sending ever proves too slow or unreliable for large files at real
+  volume, that's a measured reason to revisit, not a guess made now.
+
+### Consequences
+
+**Gain:** one Meta API call per outbound media send instead of two;
+`WhatsAppGateway`'s outbound surface stays symmetric with `sendText`/
+`sendTemplate` (all three just build a payload and POST); no need to
+hold the full attachment bytes in backend memory during a send — the
+presigned URL is generated in constant time regardless of file size.
+
+**Sacrifice:** sending now depends on R2 being reachable from Meta's
+servers at fetch time, not just from ours — a Cloudflare-side outage
+that our own backend doesn't observe could still fail a send. Accepted:
+R2 is a production object store with its own availability SLA, and the
+existing outbound retry/backoff (whatsapp-domain.md §6) already treats
+any send failure, from any cause, the same way.
+
+### Revisit Conditions
+
+Revisit toward upload-first (or a hybrid) if real send failures start
+correlating with presigned-URL fetch problems at measurable volume —
+not a concern to design around before it's observed.

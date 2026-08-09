@@ -4,7 +4,10 @@ import com.supportplatform.conversation.Conversation;
 import com.supportplatform.conversation.ConversationService;
 import com.supportplatform.customer.Customer;
 import com.supportplatform.customer.CustomerService;
+import com.supportplatform.message.Message;
 import com.supportplatform.message.MessageService;
+import com.supportplatform.storage.Attachment;
+import com.supportplatform.storage.AttachmentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -14,6 +17,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -28,22 +32,29 @@ class WebhookEventHandler {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookEventHandler.class);
     private static final int MAX_ATTEMPTS = 5;
+    /** WhatsApp's four media categories (storage-domain.md §1 — stickers excluded, out of scope). */
+    private static final Set<String> MEDIA_TYPES = Set.of("image", "document", "audio", "video");
 
     private final WebhookEventRepository webhookEventRepository;
     private final WhatsAppConnectionRepository connectionRepository;
     private final CustomerService customerService;
     private final ConversationService conversationService;
     private final MessageService messageService;
+    private final AttachmentService attachmentService;
+    private final WhatsAppGateway gateway;
     private final ObjectMapper objectMapper;
 
     WebhookEventHandler(WebhookEventRepository webhookEventRepository, WhatsAppConnectionRepository connectionRepository,
                          CustomerService customerService, ConversationService conversationService,
-                         MessageService messageService, ObjectMapper objectMapper) {
+                         MessageService messageService, AttachmentService attachmentService, WhatsAppGateway gateway,
+                         ObjectMapper objectMapper) {
         this.webhookEventRepository = webhookEventRepository;
         this.connectionRepository = connectionRepository;
         this.customerService = customerService;
         this.conversationService = conversationService;
         this.messageService = messageService;
+        this.attachmentService = attachmentService;
+        this.gateway = gateway;
         this.objectMapper = objectMapper;
     }
 
@@ -88,28 +99,52 @@ class WebhookEventHandler {
         if (connection.isEmpty()) {
             return false;
         }
-        UUID tenantId = connection.get().getTenantId();
 
         String profileName = value.path("contacts").isEmpty() ? null
                 : value.path("contacts").get(0).path("profile").path("name").asText(null);
 
         for (JsonNode message : value.path("messages")) {
-            handleInboundMessage(tenantId, message, profileName);
+            handleInboundMessage(connection.get(), message, profileName);
         }
         for (JsonNode status : value.path("statuses")) {
-            handleStatusUpdate(tenantId, status);
+            handleStatusUpdate(connection.get().getTenantId(), status);
         }
         return true;
     }
 
-    private void handleInboundMessage(UUID tenantId, JsonNode message, String profileName) {
-        String from = message.path("from").asText();
+    private void handleInboundMessage(WhatsAppConnection connection, JsonNode message, String profileName) {
+        UUID tenantId = connection.getTenantId();
         String waMessageId = message.path("id").asText();
-        String body = message.path("text").path("body").asText("");
+
+        if (messageService.existsByWaMessageId(tenantId, waMessageId)) {
+            return; // redelivered event — skip re-resolving the customer/conversation and, for media, re-downloading it
+        }
+
+        String from = message.path("from").asText();
+        String type = message.path("type").asText("text");
 
         Customer customer = customerService.findOrCreateFromInbound(tenantId, "+" + from, profileName);
         Conversation conversation = conversationService.findOrOpenForCustomer(tenantId, customer.getId());
-        messageService.recordInbound(tenantId, conversation.getId(), waMessageId, body);
+
+        if (MEDIA_TYPES.contains(type)) {
+            handleInboundMedia(connection, conversation.getId(), message, type, waMessageId);
+        } else {
+            String body = message.path("text").path("body").asText("");
+            messageService.recordInbound(tenantId, conversation.getId(), waMessageId, body);
+        }
+    }
+
+    private void handleInboundMedia(WhatsAppConnection connection, UUID conversationId, JsonNode message, String type, String waMessageId) {
+        JsonNode mediaNode = message.path(type);
+        String mediaId = mediaNode.path("id").asText();
+        String caption = mediaNode.path("caption").asText("");
+        String fileName = mediaNode.path("filename").asText(null);
+
+        DownloadedMedia media = gateway.downloadMedia(connection, mediaId);
+        Attachment attachment = attachmentService.upload(connection.getTenantId(), media.content(), media.contentType(), fileName);
+
+        Message savedMessage = messageService.recordInbound(connection.getTenantId(), conversationId, waMessageId, caption);
+        attachment.linkToMessage(savedMessage.getId());
     }
 
     private void handleStatusUpdate(UUID tenantId, JsonNode status) {

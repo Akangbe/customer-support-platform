@@ -9,10 +9,20 @@ app:
     graph-api-base-url: ${WHATSAPP_GRAPH_API_BASE_URL:https://graph.facebook.com/v21.0}
   scheduling:
     enabled: ${APP_SCHEDULING_ENABLED:true}
+  storage:
+    endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+    bucket: ${STORAGE_BUCKET:attachments-local}
+    access-key: ${STORAGE_ACCESS_KEY:minioadmin}
+    secret-key: ${STORAGE_SECRET_KEY:minioadmin}
+    presigned-url-ttl: ${STORAGE_PRESIGNED_URL_TTL:PT15M}
 
 spring:
   application:
     name: customer-support-platform
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
   jpa:
     open-in-view: false
     hibernate:

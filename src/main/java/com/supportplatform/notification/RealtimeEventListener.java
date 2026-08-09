@@ -8,6 +8,7 @@ import com.supportplatform.message.Message;
 import com.supportplatform.message.MessageEvent;
 import com.supportplatform.message.MessageService;
 import com.supportplatform.message.dto.MessageResponse;
+import com.supportplatform.storage.AttachmentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -39,12 +40,14 @@ public class RealtimeEventListener {
     private final SimpMessagingTemplate messagingTemplate;
     private final ConversationService conversationService;
     private final MessageService messageService;
+    private final AttachmentService attachmentService;
 
     public RealtimeEventListener(SimpMessagingTemplate messagingTemplate, ConversationService conversationService,
-                                  MessageService messageService) {
+                                  MessageService messageService, AttachmentService attachmentService) {
         this.messagingTemplate = messagingTemplate;
         this.conversationService = conversationService;
         this.messageService = messageService;
+        this.attachmentService = attachmentService;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -61,7 +64,8 @@ public class RealtimeEventListener {
     public void onMessageEvent(MessageEvent event) {
         try {
             Message message = messageService.getWithinTenant(event.tenantId(), event.messageId());
-            messagingTemplate.convertAndSend(topicFor(event.tenantId(), "messages"), MessageResponse.from(message));
+            UUID attachmentId = attachmentService.findAttachmentIdForMessage(message.getId()).orElse(null);
+            messagingTemplate.convertAndSend(topicFor(event.tenantId(), "messages"), MessageResponse.from(message, attachmentId));
         } catch (Exception e) {
             log.warn("Failed to broadcast message event for {}: {}", event.messageId(), e.getMessage());
         }
