@@ -58,6 +58,15 @@ customer-support-platform/
 └── pom.xml
 ```
 
+## Running locally
+
+```
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local   # against a local Postgres on :5432
+./mvnw test                                                # unit + Testcontainers integration tests
+```
+
+Tests need Docker running (Testcontainers spins up a real Postgres per run). On Windows with Docker Desktop's `desktop-linux` context, Testcontainers' default named-pipe lookup can fail to connect — if `./mvnw test` reports "Could not find a valid Docker environment", set `DOCKER_HOST=npipe:////./pipe/dockerDesktopLinuxEngine` (check `docker context ls` for the exact pipe on your machine), or add it permanently to `~/.testcontainers.properties` as `docker.host=npipe:////./pipe/dockerDesktopLinuxEngine`.
+
 ## Reading order for a new engineer
 
 Product vision → functional requirements → domain model → system architecture → architecture principles → WhatsApp integration → decision log. Ninety minutes, and you understand the whole system.
