@@ -108,6 +108,14 @@ public class Conversation {
         this.priority = priority;
     }
 
+    public void recordInboundAt(Instant when) {
+        this.lastInboundAt = when;
+    }
+
+    public void recordOutboundAt(Instant when) {
+        this.lastOutboundAt = when;
+    }
+
     public UUID getId() {
         return id;
     }

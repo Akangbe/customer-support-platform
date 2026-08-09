@@ -18,13 +18,108 @@ The decision itself is **not lost** — it is fully specified operationally in [
 
 ## ADR-012 — Idempotent ingestion / transactional outbox
 
-**Status:** Referenced elsewhere as Accepted — original ADR body not recovered
+**Status:** Accepted
 
-Same situation as ADR-011: cited by `non-functional-requirements.md` (Reliability section) and implied by Architecture Principles Rules 7–8, but no standalone ADR body exists in the repository.
+### Context
 
-The decision is fully specified operationally in [`architecture-principles.md` Rules 7–8](../03-architecture/architecture-principles.md#rule-7--webhooks-are-at-least-once-ingestion-must-be-idempotent) and [`whatsapp-integration.md` §5–6](../03-architecture/whatsapp-integration.md#5-idempotency): dedupe inbound events on `(tenant_id, wa_message_id)` before they become domain facts, and route outbound sends through an outbox so a transient Meta failure is a retry, not a lost message.
+`architecture-principles.md` Rules 7–8 and `whatsapp-integration.md` §5–6
+already commit the system to two related guarantees: inbound webhook
+events must be safe to process more than once (Meta retries — delivery
+is at-least-once, never exactly-once), and outbound sends must survive a
+transient failure without silently dropping a reply. Phase 5 (Message
+domain) is where both guarantees first need a concrete data-model shape,
+because that's where `Message` rows and their `wa_message_id` come into
+existence — this ADR was flagged since the Phase 0 audit as needing its
+full body authored before that happened, rather than staying an
+operational description scattered across two other docs.
 
-**Action:** author the full ADR body here before Phase 5 (Message domain) and Phase 6 (WhatsApp Integration) begin.
+### Options Considered
+
+1. **Application-level dedupe check** — before inserting, `SELECT` for an
+   existing row with the same `(tenant_id, wa_message_id)`; skip if found.
+2. **Database-enforced uniqueness** — a unique constraint on
+   `(tenant_id, wa_message_id)`; treat the resulting constraint violation
+   as "already processed," not an error.
+3. **External dedupe store** (Redis `SETNX` on the message id, short TTL)
+   ahead of touching Postgres at all.
+
+For outbound reliability specifically:
+
+A. **Synchronous send, no outbox** — call Meta inline during the HTTP
+   request that persists the message.
+B. **Persist-then-async-send (outbox)** — persist the message as
+   `PENDING` in the same transaction as the domain write, then hand off
+   to an async sender that calls Meta and updates status, retrying with
+   backoff on failure.
+
+### Decision
+
+**Option 2** for inbound idempotency, **Option B** for outbound
+reliability.
+
+Inbound: a unique index on `(tenant_id, wa_message_id)` where
+`wa_message_id IS NOT NULL` is the source of truth for "have we seen
+this before" — not an application-level check-then-insert, which has a
+race window under concurrent delivery (two webhook retries landing at
+once) that only the database can actually close. `recordInbound` treats
+the resulting constraint violation as a no-op success, not a failure.
+
+Outbound: every outbound message is persisted as `PENDING` in the same
+transaction as the API request that created it, before any attempt to
+reach Meta. A separate sender component (the "outbox" — Phase 6) picks
+up `PENDING` messages and drives them to `SENT`, retrying transient
+failures with backoff (`4^X` seconds, per `whatsapp-integration.md` §6)
+rather than the request thread trying once and giving up.
+
+### Rationale
+
+- Option 1 (app-level check-then-insert) is a TOCTOU race: two concurrent
+  deliveries of the same retried webhook can both pass the `SELECT`
+  before either finishes its `INSERT`, producing a duplicate — exactly
+  the failure FR-WA-008 calls "load-bearing" to prevent. A unique
+  constraint has no such window; Postgres itself is the serialization
+  point.
+- Option 3 (Redis dedupe) introduces a second system that has to agree
+  with Postgres about what's been processed, with its own failure modes
+  (TTL expiry before the corresponding DB write commits, cache/DB
+  divergence on partial failure). Redis is already scoped in this
+  project as *ephemeral, never authoritative* (`system-architecture.md`
+  §2) — using it as the source of truth for "has this message been
+  ingested" would violate that scoping for no real gain over a DB
+  constraint.
+- Option A (synchronous send) ties the API response — and the record of
+  "we tried to reply" — to Meta's availability and latency in the same
+  request. A slow or momentarily-down Meta call would make persisting the
+  agent's reply fail too, which is backwards: the reply is real the
+  moment the agent hits send, and the record of that intent must survive
+  independent of whether the network hop to Meta succeeds on the first
+  try.
+
+### Consequences
+
+**Gain:** duplicate webhook deliveries cannot create duplicate messages,
+enforced structurally rather than by discipline in application code; a
+transient Meta outage degrades to slower delivery (retried by the
+outbox) rather than silently lost replies or a failed agent-facing
+request.
+
+**Sacrifice:** outbound status is now eventually consistent from the
+agent's point of view — a freshly sent message shows `PENDING` until the
+outbox actually dispatches it, not `SENT` immediately. The dashboard has
+to render that state honestly rather than assuming synchronous success.
+The outbox consumer itself (polling vs. a scheduled sweep vs. an event
+trigger) is a Phase 6 implementation decision, not decided here — this
+ADR fixes the data-model contract (`PENDING`-first, unique dedupe key),
+not the sender's execution mechanism.
+
+### Revisit Conditions
+
+Revisit the dedupe mechanism only if a future provider integration
+can't supply a stable per-message id to key the unique index on — not a
+concern for WhatsApp, which guarantees one. Revisit the outbox mechanism
+once Phase 6 has real send volume to observe (queue-backed vs.
+scheduled-sweep tradeoffs are easier to judge with actual latency data
+than in the abstract).
 
 ---
 

@@ -1,13 +1,10 @@
 package com.supportplatform.conversation;
 
 import com.supportplatform.AbstractIntegrationTest;
-import com.supportplatform.conversation.dto.StartConversationRequest;
 import com.supportplatform.user.UserRole;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
-import org.springframework.test.web.servlet.MvcResult;
-import tools.jackson.databind.JsonNode;
 
 import java.util.UUID;
 
@@ -127,16 +124,5 @@ class ConversationAssignmentTest extends AbstractIntegrationTest {
                         .session(owner).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"agentId\":\"" + ownerId + "\"}"))
                 .andExpect(status().isConflict());
-    }
-
-    private String startConversation(MockHttpSession session, String customerId) throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/v1/conversations")
-                        .session(session)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new StartConversationRequest(UUID.fromString(customerId)))))
-                .andExpect(status().isOk())
-                .andReturn();
-        JsonNode node = objectMapper.readTree(result.getResponse().getContentAsString());
-        return node.get("id").asText();
     }
 }

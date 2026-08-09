@@ -2,6 +2,7 @@ package com.supportplatform.common.error;
 
 import com.supportplatform.conversation.InvalidConversationStateException;
 import com.supportplatform.customer.CustomerAlreadyExistsException;
+import com.supportplatform.message.OutsideServiceWindowException;
 import com.supportplatform.user.EmailAlreadyRegisteredException;
 import com.supportplatform.user.InvalidInviteTokenException;
 import com.supportplatform.user.LastOwnerException;
@@ -92,6 +93,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(InvalidConversationStateException.class)
     public ResponseEntity<ErrorResponse> handleInvalidConversationState(InvalidConversationStateException ex, HttpServletRequest request) {
+        return build(HttpStatus.CONFLICT, ex.getMessage(), request, List.of());
+    }
+
+    @ExceptionHandler(OutsideServiceWindowException.class)
+    public ResponseEntity<ErrorResponse> handleOutsideServiceWindow(OutsideServiceWindowException ex, HttpServletRequest request) {
         return build(HttpStatus.CONFLICT, ex.getMessage(), request, List.of());
     }
 

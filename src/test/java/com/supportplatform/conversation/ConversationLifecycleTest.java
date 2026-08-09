@@ -6,8 +6,6 @@ import com.supportplatform.conversation.dto.UpdatePriorityRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
-import org.springframework.test.web.servlet.MvcResult;
-import tools.jackson.databind.JsonNode;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
@@ -139,16 +137,5 @@ class ConversationLifecycleTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(1)))
                 .andExpect(jsonPath("$.content[0].customerId").value(closedCustomerId));
-    }
-
-    private String startConversation(MockHttpSession session, String customerId) throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/v1/conversations")
-                        .session(session)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new StartConversationRequest(java.util.UUID.fromString(customerId)))))
-                .andExpect(status().isOk())
-                .andReturn();
-        JsonNode node = objectMapper.readTree(result.getResponse().getContentAsString());
-        return node.get("id").asText();
     }
 }

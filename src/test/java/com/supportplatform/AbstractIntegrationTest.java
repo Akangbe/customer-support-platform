@@ -1,8 +1,10 @@
 package com.supportplatform;
 
+import com.supportplatform.auth.AuthenticatedPrincipal;
 import com.supportplatform.auth.dto.AcceptInviteRequest;
 import com.supportplatform.auth.dto.LoginRequest;
 import com.supportplatform.auth.dto.RegisterTenantRequest;
+import com.supportplatform.conversation.dto.StartConversationRequest;
 import com.supportplatform.customer.dto.CreateCustomerRequest;
 import com.supportplatform.user.UserRole;
 import com.supportplatform.user.dto.InviteUserRequest;
@@ -11,6 +13,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -20,6 +24,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+
+import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -94,6 +100,24 @@ public abstract class AbstractIntegrationTest {
     /** The authenticated user's own id, via GET /api/v1/users/me. */
     protected String extractUserId(MockHttpSession session) throws Exception {
         var result = mockMvc.perform(get("/api/v1/users/me").session(session)).andReturn();
+        JsonNode node = objectMapper.readTree(result.getResponse().getContentAsString());
+        return node.get("id").asText();
+    }
+
+    /** Reads tenantId straight off the session's security context — no extra HTTP round trip needed. */
+    protected UUID extractTenantId(MockHttpSession session) {
+        SecurityContext context = (SecurityContext) session.getAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
+        return ((AuthenticatedPrincipal) context.getAuthentication().getPrincipal()).getTenantId();
+    }
+
+    /** Starts (or idempotently resumes, per ADR-013) a conversation for the given customer and returns its id. */
+    protected String startConversation(MockHttpSession session, String customerId) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/conversations")
+                        .session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new StartConversationRequest(UUID.fromString(customerId)))))
+                .andExpect(status().isOk())
+                .andReturn();
         JsonNode node = objectMapper.readTree(result.getResponse().getContentAsString());
         return node.get("id").asText();
     }
