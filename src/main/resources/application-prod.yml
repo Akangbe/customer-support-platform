@@ -5,6 +5,11 @@ spring:
     password: ${DB_PASSWORD}
 
 app:
+  cors:
+    # No default here on purpose: an unset origin should fail loudly
+    # (CORS rejecting every request) rather than silently falling back
+    # to the localhost:3000 default meant for local dev only.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
   whatsapp:
     verify-token: ${WHATSAPP_VERIFY_TOKEN}
     app-secret: ${WHATSAPP_APP_SECRET}
@@ -14,6 +19,19 @@ app:
     bucket: ${STORAGE_BUCKET}
     access-key: ${STORAGE_ACCESS_KEY}
     secret-key: ${STORAGE_SECRET_KEY}
+
+server:
+  servlet:
+    session:
+      cookie:
+        # The Next.js frontend is on a different origin (e.g. Vercel) than
+        # this backend (e.g. Render) — a cross-site fetch/XHR only carries
+        # the session cookie back if it's SameSite=None, and browsers
+        # require Secure for any SameSite=None cookie. Local/dev profiles
+        # deliberately don't set this: Secure cookies are dropped outright
+        # over plain HTTP, which is what local dev runs on.
+        secure: true
+        same-site: none
 
 management:
   endpoint:
