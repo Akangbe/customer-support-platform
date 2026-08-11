@@ -16,9 +16,15 @@ app:
     secret-key: ${STORAGE_SECRET_KEY:minioadmin}
     presigned-url-ttl: ${STORAGE_PRESIGNED_URL_TTL:PT15M}
 
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
 spring:
   application:
     name: customer-support-platform
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   servlet:
     multipart:
       max-file-size: 100MB
