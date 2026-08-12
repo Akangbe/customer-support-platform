@@ -1,0 +1,75 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+#
+# Usage: push this file, then in the Render dashboard go to
+# New -> Blueprint -> connect this GitHub repo. Render will detect this
+# file and propose the service below. Secret env vars (sync: false) are
+# NOT filled in here on purpose -- Render will prompt you to enter each
+# one's real value in the dashboard during setup, and they stay only in
+# Render's env var UI (never committed to this repo).
+services:
+  - type: web
+    name: customer-support-platform
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: oregon
+    plan: starter
+    healthCheckPath: /actuator/health
+    envVars:
+      # Activates application-prod.yml, which defines the required
+      # (no-default) datasource URL, CORS origin, and secure cookie config.
+      # Without this the app falls back to the base profile only and fails
+      # to start with "Failed to configure a DataSource".
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+
+      # Neon PostgreSQL (pooled connection string)
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+
+      # Next.js frontend origin(s), comma-separated if more than one
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+      # WhatsApp Cloud API
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_CREDENTIAL_ENCRYPTION_KEY
+        sync: false
+
+      # Cloudflare R2 (S3-compatible object storage)
+      - key: STORAGE_ENDPOINT
+        sync: false
+      - key: STORAGE_BUCKET
+        sync: false
+      - key: STORAGE_ACCESS_KEY
+        sync: false
+      - key: STORAGE_SECRET_KEY
+        sync: false
+
+      # AWS SES (transactional email -- invite delivery). Credentials/region
+      # are read by the AWS SDK's default provider chain, not a custom
+      # property, so the var names below are fixed by the SDK itself.
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: SES_FROM_EMAIL
+        sync: false
+      - key: SES_FROM_NAME
+        sync: false
+      # Frontend accept-invite page, with a %s placeholder for the token,
+      # e.g. https://app.example.com/accept-invite?token=%s
+      - key: INVITE_ACCEPT_URL_TEMPLATE
+        sync: false
+
+      # PORT is injected automatically by Render; no entry needed here --
+      # the app already binds to ${PORT:8080} in application.yml.

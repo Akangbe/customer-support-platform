@@ -16,8 +16,6 @@ self-registration, session-based login/logout, inviting and activating
 users, tenant-scoped authorization, cross-tenant isolation.
 
 **Out of scope (deferred, not forgotten):**
-- Sending invite emails — Phase 2 issues an activation token; wiring it to
-  an actual email provider is separate infrastructure work.
 - Self-service password reset — no functional requirement demands it yet;
   revisit when it does.
 - MFA, SSO/OIDC — no stated requirement.
@@ -113,7 +111,8 @@ POST /api/v1/users/invite  { email, name, role }   [OWNER/ADMIN only,
                                                       target role Manager/Agent
                                                       unless caller is OWNER]
   → creates User(PENDING) in the caller's tenant, with an invite token
-  → returns the token in the response (email delivery: deferred, see §1)
+  → returns the token in the response, and (after commit, best-effort)
+    emails an accept-invite link to the invitee via SES — see §8
 
 POST /api/v1/auth/accept-invite  { token, password }
   → validates token + expiry, sets password_hash, status → ACTIVE
@@ -139,3 +138,27 @@ per the engineering process, is a test that provisions two tenants (via
 the real registration endpoint) and proves a user authenticated in Tenant A
 cannot read, list, or modify anything belonging to Tenant B — including via
 guessed/enumerated IDs.
+
+## 8. Invite email delivery
+
+`UserService.invite` publishes a `UserInvitedEvent` (identifiers only)
+alongside its audit event. `email.InviteEmailListener` picks it up
+`AFTER_COMMIT`, re-fetches the user, and sends an accept-invite link via
+`email.SesEmailGateway` — the same interface/impl split used for object
+storage (`storage.StorageGateway` / `R2StorageGateway`).
+
+- **Best-effort, never fatal.** A send failure (SES misconfigured, AWS
+  outage, bad address) is caught and logged, not rethrown — a delivery
+  problem must not turn an already-committed invite into a failed HTTP
+  response for the inviter. The raw token in `InviteUserResponse` remains
+  the fallback: the inviter can always relay the accept-invite link
+  manually if the email never arrives.
+- **Credentials/region** resolve from the AWS SDK's default provider/region
+  chains (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION`), not
+  a bespoke app property — same env vars a Node/SES integration would use.
+  `SesClient` construction is lazy so an unconfigured environment (local
+  dev) degrades to a warning instead of a startup failure.
+- **`app.email.accept-invite-url-template`** (`INVITE_ACCEPT_URL_TEMPLATE`)
+  is a `%s`-templated URL pointing at the frontend's accept-invite page —
+  the backend doesn't know the frontend's routing, so this is configured
+  per environment.

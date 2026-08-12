@@ -15,6 +15,10 @@ app:
     access-key: ${STORAGE_ACCESS_KEY:minioadmin}
     secret-key: ${STORAGE_SECRET_KEY:minioadmin}
     presigned-url-ttl: ${STORAGE_PRESIGNED_URL_TTL:PT15M}
+  email:
+    from-address: ${SES_FROM_EMAIL:invites@localhost.dev}
+    from-name: ${SES_FROM_NAME:Support Platform}
+    accept-invite-url-template: ${INVITE_ACCEPT_URL_TEMPLATE:http://localhost:3000/accept-invite?token=%s}
 
 server:
   port: ${PORT:8080}

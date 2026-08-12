@@ -19,6 +19,10 @@ app:
     bucket: ${STORAGE_BUCKET}
     access-key: ${STORAGE_ACCESS_KEY}
     secret-key: ${STORAGE_SECRET_KEY}
+  email:
+    from-address: ${SES_FROM_EMAIL}
+    from-name: ${SES_FROM_NAME}
+    accept-invite-url-template: ${INVITE_ACCEPT_URL_TEMPLATE}
 
 server:
   servlet:
