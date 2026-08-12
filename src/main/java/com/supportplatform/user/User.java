@@ -123,6 +123,10 @@ public class User {
         return inviteToken;
     }
 
+    public Instant getInviteTokenExpiresAt() {
+        return inviteTokenExpiresAt;
+    }
+
     public UUID getId() {
         return id;
     }

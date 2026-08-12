@@ -60,6 +60,7 @@ public class UserService {
 
         publish(actingTenantId, actorUserId, AuditAction.USER_INVITED, user.getId(),
                 "Invited " + email + " as " + request.role());
+        eventPublisher.publishEvent(new UserInvitedEvent(actingTenantId, user.getId()));
         return user;
     }
 
