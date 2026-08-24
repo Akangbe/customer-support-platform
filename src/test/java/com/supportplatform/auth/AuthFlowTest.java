@@ -62,4 +62,46 @@ class AuthFlowTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/v1/users/me").session(session))
                 .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    void repeatedFailedLoginsLockTheAccountOut() throws Exception {
+        registerTenantAndGetSession("Flow Tenant 5", "Flow Owner 5", "flow-owner-5@example.com", "password123");
+
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/v1/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(new LoginRequest("flow-owner-5@example.com", "wrong-password"))))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        // 6th attempt, even with the correct password, is locked out rather than authenticated
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest("flow-owner-5@example.com", "password123"))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.status").value(429));
+    }
+
+    @Test
+    void aSuccessfulLoginResetsTheFailureCount() throws Exception {
+        registerTenantAndGetSession("Flow Tenant 6", "Flow Owner 6", "flow-owner-6@example.com", "password123");
+
+        for (int i = 0; i < 4; i++) {
+            mockMvc.perform(post("/api/v1/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(new LoginRequest("flow-owner-6@example.com", "wrong-password"))))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest("flow-owner-6@example.com", "password123"))))
+                .andExpect(status().isOk());
+
+        // the successful login cleared the streak, so this is only failure 1 of 5, not a lockout
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest("flow-owner-6@example.com", "wrong-password"))))
+                .andExpect(status().isUnauthorized());
+    }
 }
