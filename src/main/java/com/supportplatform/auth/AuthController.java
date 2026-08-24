@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.SecurityContextRepository;
@@ -30,13 +31,16 @@ public class AuthController {
     private final UserService userService;
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
+    private final LoginAttemptService loginAttemptService;
 
     public AuthController(TenantRegistrationService tenantRegistrationService, UserService userService,
-                           AuthenticationManager authenticationManager, SecurityContextRepository securityContextRepository) {
+                           AuthenticationManager authenticationManager, SecurityContextRepository securityContextRepository,
+                           LoginAttemptService loginAttemptService) {
         this.tenantRegistrationService = tenantRegistrationService;
         this.userService = userService;
         this.authenticationManager = authenticationManager;
         this.securityContextRepository = securityContextRepository;
+        this.loginAttemptService = loginAttemptService;
     }
 
     @PostMapping("/register-tenant")
@@ -52,7 +56,16 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request,
                                HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-        Authentication authentication = authenticate(request.email(), request.password());
+        loginAttemptService.checkNotLocked(request.email());
+        Authentication authentication;
+        try {
+            authentication = authenticate(request.email(), request.password());
+        } catch (AuthenticationException e) {
+            loginAttemptService.recordFailure(request.email());
+            throw e;
+        }
+        loginAttemptService.recordSuccess(request.email());
+
         establishSession(authentication, httpRequest, httpResponse);
         AuthenticatedPrincipal principal = (AuthenticatedPrincipal) authentication.getPrincipal();
         userService.recordLogin(principal.getTenantId(), principal.getUserId());

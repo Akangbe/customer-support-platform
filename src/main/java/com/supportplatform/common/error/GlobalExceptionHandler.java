@@ -1,5 +1,6 @@
 package com.supportplatform.common.error;
 
+import com.supportplatform.auth.TooManyLoginAttemptsException;
 import com.supportplatform.conversation.InvalidConversationStateException;
 import com.supportplatform.customer.CustomerAlreadyExistsException;
 import com.supportplatform.message.OutsideServiceWindowException;
@@ -64,6 +65,15 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthentication(HttpServletRequest request) {
         return build(HttpStatus.UNAUTHORIZED, "Invalid email or password", request, List.of());
+    }
+
+    @ExceptionHandler(TooManyLoginAttemptsException.class)
+    public ResponseEntity<ErrorResponse> handleTooManyLoginAttempts(TooManyLoginAttemptsException ex, HttpServletRequest request) {
+        ErrorResponse body = new ErrorResponse(Instant.now(), HttpStatus.TOO_MANY_REQUESTS.value(),
+                HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase(), ex.getMessage(), request.getRequestURI(), List.of());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
+                .body(body);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
