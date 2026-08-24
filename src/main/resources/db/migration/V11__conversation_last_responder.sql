@@ -1,0 +1,1 @@
+ALTER TABLE conversation ADD COLUMN last_responder_agent_id UUID REFERENCES app_user (id);
