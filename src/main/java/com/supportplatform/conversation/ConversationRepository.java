@@ -9,7 +9,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ConversationRepository extends JpaRepository<Conversation, UUID> {
-
     Optional<Conversation> findByIdAndTenantId(UUID id, UUID tenantId);
 
     Page<Conversation> findAllByTenantId(UUID tenantId, Pageable pageable);

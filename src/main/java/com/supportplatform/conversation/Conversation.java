@@ -56,6 +56,9 @@ public class Conversation {
     @Column(name = "last_outbound_at")
     private Instant lastOutboundAt;
 
+    @Column(name = "last_responder_agent_id")
+    private UUID lastResponderAgentId;
+
     @Column(name = "closed_at")
     private Instant closedAt;
 
@@ -112,8 +115,9 @@ public class Conversation {
         this.lastInboundAt = when;
     }
 
-    public void recordOutboundAt(Instant when) {
+    public void recordOutboundAt(Instant when, UUID agentId) {
         this.lastOutboundAt = when;
+        this.lastResponderAgentId = agentId;
     }
 
     public UUID getId() {
@@ -150,6 +154,10 @@ public class Conversation {
 
     public Instant getLastOutboundAt() {
         return lastOutboundAt;
+    }
+
+    public UUID getLastResponderAgentId() {
+        return lastResponderAgentId;
     }
 
     public Instant getClosedAt() {

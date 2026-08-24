@@ -16,6 +16,7 @@ public record ConversationResponse(
         Instant createdAt,
         Instant lastInboundAt,
         Instant lastOutboundAt,
+        UUID lastResponderAgentId,
         Instant closedAt
 ) {
     public static ConversationResponse from(Conversation conversation) {
@@ -28,6 +29,7 @@ public record ConversationResponse(
                 conversation.getCreatedAt(),
                 conversation.getLastInboundAt(),
                 conversation.getLastOutboundAt(),
+                conversation.getLastResponderAgentId(),
                 conversation.getClosedAt()
         );
     }

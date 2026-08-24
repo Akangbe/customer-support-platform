@@ -111,7 +111,7 @@ public class MessageService {
         Message message = templateName != null
                 ? Message.outboundTemplate(tenantId, conversationId, senderUserId, normalizedBody, templateName, templateLanguageCode, templateParams)
                 : Message.outbound(tenantId, conversationId, senderUserId, normalizedBody);
-        conversation.recordOutboundAt(Instant.now());
+        conversation.recordOutboundAt(Instant.now(), senderUserId);
         message = messageRepository.save(message);
 
         if (attachment != null) {
