@@ -14,19 +14,19 @@ How we access WhatsApp depends on *whose* accounts we connect:
 | Mode | Whose WABA | Token type | App Review? |
 |---|---|---|---|
 | **Direct developer** | Only our own (one owned WABA) | System User token | **No** |
-| **Tech Provider** | Other companies' WABAs | Business Integration System User token (per tenant, via Embedded Signup) | **Yes — required** |
+| **Tech Provider** | Other companies' WABAs | Business Integration System User token (per tenant, via Embedded Signup) | **Yes — approved** |
 
-The multi-tenant SaaS vision is **Tech Provider**. But Tech Provider status requires **App Review and Advanced access** for `whatsapp_business_messaging` / `whatsapp_business_management` before *any* external tenant can grant your app access — without it, calls to WABAs you don't own fail with **error code 200** (an auth error, not HTTP 200). That review is a weeks-long gate that can fail.
+The multi-tenant SaaS vision is **Tech Provider**. Tech Provider status requires **App Review and Advanced access** for `whatsapp_business_messaging` / `whatsapp_business_management` before *any* external tenant can grant your app access — without it, calls to WABAs you don't own fail with **error code 200** (an auth error, not HTTP 200). That review is a weeks-long gate that can fail — ours didn't; it's approved.
 
 ## 2. Our phased plan (see ADR-011)
 
-We refuse to let Meta's partner queue block first launch, so:
+We refused to let Meta's partner queue block first launch, so:
 
-1. **Phase A — RitaRock, direct-developer mode.** One owned WABA, a System User token, no App Review. Prove the entire product end-to-end with a real business.
-2. **Phase B — Tech Provider, in parallel.** Submit for App Review / Advanced access, build Embedded Signup onboarding.
-3. **Phase C — flip on multi-tenant onboarding** once approved.
+1. **Phase A — RitaRock, direct-developer mode.** One owned WABA, a System User token, no App Review. Proved the entire product end-to-end with a real business. **Shipped.**
+2. **Phase B — Tech Provider, in parallel.** Submit for App Review / Advanced access, build Embedded Signup onboarding. **App Review approved.**
+3. **Phase C — multi-tenant onboarding.** **Live** — Embedded Signup (`whatsapp-domain.md` §6) is the second of two ways a `WhatsAppConnection` row gets created, alongside Phase A's manual paste.
 
-The code is multi-tenant from day one; only the *onboarding path* changes between phases. In Phase A the "connection" is a single configured record; in Phase C it's the output of Embedded Signup.
+The code was multi-tenant from day one; only the *onboarding path* differs between phases. In Phase A the "connection" is a single configured record; via Phase C it's the output of Embedded Signup — both land in the same tenant-scoped table.
 
 ## 3. Webhook → tenant resolution (critical)
 

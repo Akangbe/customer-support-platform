@@ -33,6 +33,12 @@ public class MetaWhatsAppGateway implements WhatsAppGateway {
     @Value("${app.whatsapp.graph-api-base-url}")
     private String graphApiBaseUrl;
 
+    @Value("${app.whatsapp.app-id}")
+    private String appId;
+
+    @Value("${app.whatsapp.app-secret}")
+    private String appSecret;
+
     public MetaWhatsAppGateway(RestClient.Builder builder) {
         this.restClient = builder.build();
     }
@@ -106,6 +112,41 @@ public class MetaWhatsAppGateway implements WhatsAppGateway {
                 .body(byte[].class);
 
         return new DownloadedMedia(content, contentType);
+    }
+
+    @Override
+    public OAuthExchangeResult exchangeCodeForToken(String code) {
+        try {
+            JsonNode response = restClient.get()
+                    .uri(graphApiBaseUrl + "/oauth/access_token?client_id={clientId}&client_secret={clientSecret}&code={code}",
+                            appId, appSecret, code)
+                    .retrieve()
+                    .body(JsonNode.class);
+
+            String accessToken = response == null ? null : response.path("access_token").asText(null);
+            if (accessToken == null) {
+                return OAuthExchangeResult.failure("Meta OAuth response did not contain an access token");
+            }
+            return OAuthExchangeResult.success(accessToken);
+        } catch (RestClientException e) {
+            log.warn("WhatsApp Embedded Signup code exchange failed: {}", e.getMessage());
+            return OAuthExchangeResult.failure(e.getMessage());
+        }
+    }
+
+    @Override
+    public boolean subscribeToWaba(String wabaId, String accessToken) {
+        try {
+            restClient.post()
+                    .uri(graphApiBaseUrl + "/{wabaId}/subscribed_apps", wabaId)
+                    .header("Authorization", "Bearer " + accessToken)
+                    .retrieve()
+                    .toBodilessEntity();
+            return true;
+        } catch (RestClientException e) {
+            log.warn("Failed to subscribe app to WABA {} webhooks: {}", wabaId, e.getMessage());
+            return false;
+        }
     }
 
     private SendResult send(WhatsAppConnection connection, Map<String, Object> payload) {
