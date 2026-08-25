@@ -38,6 +38,8 @@ services:
       # WhatsApp Cloud API
       - key: WHATSAPP_VERIFY_TOKEN
         sync: false
+      - key: WHATSAPP_APP_ID
+        sync: false
       - key: WHATSAPP_APP_SECRET
         sync: false
       - key: WHATSAPP_CREDENTIAL_ENCRYPTION_KEY

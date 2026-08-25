@@ -2,6 +2,7 @@ package com.supportplatform.whatsapp;
 
 import com.supportplatform.auth.AuthenticatedPrincipal;
 import com.supportplatform.whatsapp.dto.ConnectWhatsAppRequest;
+import com.supportplatform.whatsapp.dto.EmbeddedSignupRequest;
 import com.supportplatform.whatsapp.dto.WhatsAppConnectionResponse;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -32,5 +33,13 @@ public class WhatsAppConnectionController {
     @GetMapping
     public WhatsAppConnectionResponse get(@AuthenticationPrincipal AuthenticatedPrincipal principal) {
         return WhatsAppConnectionResponse.from(connectionService.getForTenant(principal.getTenantId(), principal.getRole()));
+    }
+
+    @PostMapping("/embedded-signup")
+    public WhatsAppConnectionResponse embeddedSignup(@AuthenticationPrincipal AuthenticatedPrincipal principal,
+                                                       @Valid @RequestBody EmbeddedSignupRequest request) {
+        WhatsAppConnection connection = connectionService.connectViaEmbeddedSignup(principal.getTenantId(), principal.getUserId(),
+                principal.getRole(), request.code(), request.phoneNumberId(), request.wabaId());
+        return WhatsAppConnectionResponse.from(connection);
     }
 }

@@ -36,13 +36,6 @@ finally gets its full body, closing the action item open since Phase 0.
 - ADR-011's full body.
 
 **Out of scope (deferred, not forgotten):**
-- Tech Provider / Embedded Signup onboarding (ADR-011 Phase B/C) — no
-  App Review has been filed; every tenant in Phase A connects the one
-  way direct-developer mode allows, pasting credentials generated in
-  Meta Business Manager for their own owned WABA. The `WhatsAppConnection`
-  model is already tenant-scoped so nothing here needs to change shape
-  when Phase C flips the onboarding path on — only *how a row gets
-  created* changes, not the table.
 - Media/attachments — still blocked on the Storage module, per
   `message-domain.md` §1. Text only.
 - Template *management* (creating/tracking approval status of templates
@@ -217,6 +210,38 @@ This requires adding `attempt_count`, `next_attempt_at`, and
 Phase 5 deliberately didn't add yet, because nothing consumed
 `PENDING` rows until now.
 
+**Embedded Signup (ADR-011 Phase C):** now that App Review is approved,
+`WhatsAppConnection` rows can also be created via Meta's Embedded Signup
+flow, not just the manual paste from Phase A. The frontend runs Meta's
+JS SDK popup and hands our backend an authorization `code` plus the
+`phoneNumberId`/`wabaId` Meta reported for the WABA the tenant just
+authorized (`POST /api/v1/whatsapp/connection/embedded-signup`, Owner/Admin
+only, same guard as the manual path). `WhatsAppGateway` gained two
+pre-connection methods for this — no `WhatsAppConnection` param, since
+none exists yet at this point in the flow:
+
+```java
+OAuthExchangeResult exchangeCodeForToken(String code);
+boolean subscribeToWaba(String wabaId, String accessToken);
+```
+
+`exchangeCodeForToken` calls Meta's OAuth endpoint server-side (the app
+secret never reaches the frontend) and is the load-bearing step — a
+failure here means no connection is created at all. `subscribeToWaba`
+(`POST /{waba-id}/subscribed_apps`) starts webhook delivery for the new
+WABA; Phase A's one WABA got this manually via Business Manager, but
+Phase C connections need it done programmatically. It's deliberately
+**best-effort**: a failure still leaves the tenant with a working,
+saved connection (real token, can send/view immediately) — just without
+inbound events until the subscription is retried, which is a
+server-log-visible gap today, not an automated retry loop (no
+requirement for one yet, Rule 5). Both new methods return a plain result
+type (`OAuthExchangeResult`, mirroring `SendResult`) rather than a raw
+Meta shape, keeping `MetaWhatsAppGateway` the only class that ever sees
+Meta's actual JSON (Rule 4). `WhatsAppConnectionService.connectViaEmbeddedSignup`
+reuses the same upsert helper `connect()` uses — the table's shape truly
+didn't need to change, as this section originally predicted it wouldn't.
+
 ## 7. Status webhook → message status
 
 An inbound status-update entry (`sent`/`delivered`/`read`/`failed`,
@@ -284,10 +309,17 @@ New `app.whatsapp.*` properties, following the existing
 app:
   whatsapp:
     verify-token: ${WHATSAPP_VERIFY_TOKEN}
+    app-id: ${WHATSAPP_APP_ID}
     app-secret: ${WHATSAPP_APP_SECRET}
     credential-encryption-key: ${WHATSAPP_CREDENTIAL_ENCRYPTION_KEY}
     graph-api-base-url: ${WHATSAPP_GRAPH_API_BASE_URL:https://graph.facebook.com/v21.0}
 ```
+
+`app-id` is the OAuth `client_id` for Embedded Signup's code exchange
+(§6) — unlike `app-secret`, it's not sensitive (Meta app IDs are public,
+visible in the JS SDK config the frontend already ships), but it lives
+in config rather than being hardcoded since it's still environment-specific
+(dev/prod Meta apps differ).
 
 None of these are ever tenant data; they belong to *our* Meta app, one
 per environment.

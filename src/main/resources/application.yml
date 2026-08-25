@@ -4,6 +4,7 @@ app:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   whatsapp:
     verify-token: ${WHATSAPP_VERIFY_TOKEN:local-dev-verify-token}
+    app-id: ${WHATSAPP_APP_ID:local-dev-app-id}
     app-secret: ${WHATSAPP_APP_SECRET:local-dev-app-secret-change-me}
     credential-encryption-key: ${WHATSAPP_CREDENTIAL_ENCRYPTION_KEY:o7ZaFx2pz17MiVp617XusGgJllHTilKy6qGh5Wk7MPM=}
     graph-api-base-url: ${WHATSAPP_GRAPH_API_BASE_URL:https://graph.facebook.com/v21.0}

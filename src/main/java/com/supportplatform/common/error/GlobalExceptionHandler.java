@@ -7,6 +7,7 @@ import com.supportplatform.message.OutsideServiceWindowException;
 import com.supportplatform.user.EmailAlreadyRegisteredException;
 import com.supportplatform.user.InvalidInviteTokenException;
 import com.supportplatform.user.LastOwnerException;
+import com.supportplatform.whatsapp.WhatsAppCodeExchangeException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -109,6 +110,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(OutsideServiceWindowException.class)
     public ResponseEntity<ErrorResponse> handleOutsideServiceWindow(OutsideServiceWindowException ex, HttpServletRequest request) {
         return build(HttpStatus.CONFLICT, ex.getMessage(), request, List.of());
+    }
+
+    @ExceptionHandler(WhatsAppCodeExchangeException.class)
+    public ResponseEntity<ErrorResponse> handleWhatsAppCodeExchange(WhatsAppCodeExchangeException ex, HttpServletRequest request) {
+        log.warn("WhatsApp Embedded Signup code exchange failed: {}", ex.getMessage());
+        return build(HttpStatus.BAD_REQUEST,
+                "WhatsApp Embedded Signup could not be completed — the authorization code may be invalid or expired.",
+                request, List.of());
     }
 
     @ExceptionHandler(Exception.class)

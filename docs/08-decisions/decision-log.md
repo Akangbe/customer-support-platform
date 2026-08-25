@@ -6,7 +6,7 @@ Every significant architectural decision lives here (Architecture Principles, Ru
 
 ## ADR-011 — Phased Meta onboarding
 
-**Status:** Accepted
+**Status:** Accepted — Phase B (App Review) approved; Phase C (Embedded Signup) shipped. See `whatsapp-integration.md` §2 and `whatsapp-domain.md` §6.
 
 ### Context
 
