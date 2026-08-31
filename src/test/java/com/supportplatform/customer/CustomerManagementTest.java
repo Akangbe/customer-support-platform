@@ -96,8 +96,8 @@ class CustomerManagementTest extends AbstractIntegrationTest {
 
     @Test
     void findOrCreateFromInboundIsIdempotent() throws Exception {
-        registerTenantAndGetSession("Inbound Co", "Inbound Owner", "inbound-owner-1@example.com", "password123");
-        UUID tenantId = userRepository.findByEmail("inbound-owner-1@example.com").orElseThrow().getTenantId();
+        registerTenantAndGetSession("Customer Inbound Co", "Customer Inbound Owner", "customer-inbound-owner-1@example.com", "password123");
+        UUID tenantId = userRepository.findByEmail("customer-inbound-owner-1@example.com").orElseThrow().getTenantId();
 
         Customer first = customerService.findOrCreateFromInbound(tenantId, "+14155550199", "From WhatsApp");
         Customer second = customerService.findOrCreateFromInbound(tenantId, "+14155550199", "From WhatsApp");

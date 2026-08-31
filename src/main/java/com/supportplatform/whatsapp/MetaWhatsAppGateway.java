@@ -3,6 +3,7 @@ package com.supportplatform.whatsapp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -10,6 +11,7 @@ import org.springframework.web.client.RestClientException;
 import tools.jackson.databind.JsonNode;
 
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +25,7 @@ import java.util.Set;
  * one.
  */
 @Component
+@ConditionalOnProperty(prefix = "app.whatsapp", name = "mock", havingValue = "false", matchIfMissing = true)
 public class MetaWhatsAppGateway implements WhatsAppGateway {
 
     private static final Logger log = LoggerFactory.getLogger(MetaWhatsAppGateway.class);
@@ -56,14 +59,29 @@ public class MetaWhatsAppGateway implements WhatsAppGateway {
 
     @Override
     public SendResult sendTemplate(WhatsAppConnection connection, String toPhone, String templateName,
-                                    String languageCode, List<String> params) {
-        Map<String, Object> template = params.isEmpty()
+                                    String languageCode, List<String> params, String buttonUrlParam) {
+        List<Map<String, Object>> components = new ArrayList<>();
+        if (!params.isEmpty()) {
+            components.add(Map.of(
+                    "type", "body",
+                    "parameters", params.stream().map(p -> Map.of("type", "text", "text", p)).toList()
+            ));
+        }
+        if (buttonUrlParam != null && !buttonUrlParam.isBlank()) {
+            // Meta's shape for a dynamic URL button: index is the button's
+            // position in the approved template, and the parameter is the
+            // suffix appended to the URL registered there — not a whole URL.
+            components.add(Map.of(
+                    "type", "button",
+                    "sub_type", "url",
+                    "index", "0",
+                    "parameters", List.of(Map.of("type", "text", "text", buttonUrlParam))
+            ));
+        }
+
+        Map<String, Object> template = components.isEmpty()
                 ? Map.of("name", templateName, "language", Map.of("code", languageCode))
-                : Map.of("name", templateName, "language", Map.of("code", languageCode),
-                        "components", List.of(Map.of(
-                                "type", "body",
-                                "parameters", params.stream().map(p -> Map.of("type", "text", "text", p)).toList()
-                        )));
+                : Map.of("name", templateName, "language", Map.of("code", languageCode), "components", components);
 
         Map<String, Object> payload = Map.of(
                 "messaging_product", "whatsapp",

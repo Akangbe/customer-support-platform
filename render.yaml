@@ -73,5 +73,31 @@ services:
       - key: INVITE_ACCEPT_URL_TEMPLATE
         sync: false
 
+      # Notification API rate limiting.
+      #
+      # Set to "false" explicitly rather than left unset, so the choice is
+      # visible here instead of being an invisible default. This blueprint
+      # runs ONE instance (no `numInstances` below, and `plan: starter`),
+      # which is the only configuration the in-memory limiter is correct
+      # for: counters live in the process, so N instances would grant every
+      # API key N times its per-minute budget.
+      #
+      # BEFORE raising numInstances or moving to a plan with autoscaling:
+      #   1. add a Redis instance (Render Key Value, or any managed Redis)
+      #   2. set APP_RATE_LIMIT_REDIS_ENABLED=true
+      #   3. fill in REDIS_HOST / REDIS_PORT / REDIS_PASSWORD
+      # The app logs a WARN naming this trap on every boot while the
+      # in-memory limiter is active (InMemoryRateLimiter), and enabling the
+      # flag also turns the Redis health indicator on, so a misconfigured
+      # Redis fails the health check instead of silently failing open.
+      - key: APP_RATE_LIMIT_REDIS_ENABLED
+        value: "false"
+      # - key: REDIS_HOST
+      #   sync: false
+      # - key: REDIS_PORT
+      #   sync: false
+      # - key: REDIS_PASSWORD
+      #   sync: false
+
       # PORT is injected automatically by Render; no entry needed here --
       # the app already binds to ${PORT:8080} in application.yml.

@@ -4,6 +4,8 @@ import com.supportplatform.auth.TooManyLoginAttemptsException;
 import com.supportplatform.conversation.InvalidConversationStateException;
 import com.supportplatform.customer.CustomerAlreadyExistsException;
 import com.supportplatform.message.OutsideServiceWindowException;
+import com.supportplatform.notification.NotificationDeliveryException;
+import com.supportplatform.notification.TemplateNotAllowedException;
 import com.supportplatform.user.EmailAlreadyRegisteredException;
 import com.supportplatform.user.InvalidInviteTokenException;
 import com.supportplatform.user.LastOwnerException;
@@ -117,6 +119,33 @@ public class GlobalExceptionHandler {
         log.warn("WhatsApp Embedded Signup code exchange failed: {}", ex.getMessage());
         return build(HttpStatus.BAD_REQUEST,
                 "WhatsApp Embedded Signup could not be completed — the authorization code may be invalid or expired.",
+                request, List.of());
+    }
+
+    /**
+     * The caller asked for a template their tenant doesn't have, or has but
+     * isn't approved. 422 rather than 400: the request is well-formed, it's
+     * the tenant's template configuration that doesn't permit it. The
+     * message is safe to pass through — it describes the caller's own
+     * allowlist and names nothing internal.
+     */
+    @ExceptionHandler(TemplateNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleTemplateNotAllowed(TemplateNotAllowedException ex, HttpServletRequest request) {
+        return build(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request, List.of());
+    }
+
+    /**
+     * A send we accepted, authenticated and rate-limited, that Meta then
+     * refused: 502, because the failure is downstream of us, not in the
+     * caller's request. The reason is already in {@code notification_log}
+     * and in our logs — the caller gets the id, not Meta's error text.
+     */
+
+    @ExceptionHandler(NotificationDeliveryException.class)
+    public ResponseEntity<ErrorResponse> handleNotificationDelivery(NotificationDeliveryException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_GATEWAY,
+                "WhatsApp rejected this notification. Check the template name, its approval status and the recipient, "
+                        + "then retry. Reference: " + ex.getNotificationId(),
                 request, List.of());
     }
 

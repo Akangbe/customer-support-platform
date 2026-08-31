@@ -20,8 +20,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -38,13 +36,27 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * application context across them too, since they all share this identical
  * configuration.
  */
-@Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "app.scheduling.enabled=false")
 @AutoConfigureMockMvc
 public abstract class AbstractIntegrationTest {
 
-    @Container
+    /**
+     * Started once for the whole JVM and never stopped by JUnit — this is
+     * what the singleton-container pattern actually requires. It must NOT
+     * be a {@code @Container} field under {@code @Testcontainers}: that
+     * extension stops the container in each test class's {@code afterAll}
+     * and starts a fresh one, on a new random port, for the next class.
+     * Spring caches this configuration's context across all of them, so
+     * from the second class onward the cached DataSource would point at
+     * the port of a container that no longer exists — surfacing as
+     * "Connection refused" and 30s Hikari timeouts partway through a run.
+     * Ryuk reaps it when the JVM exits.
+     */
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    static {
+        POSTGRES.start();
+    }
 
     @DynamicPropertySource
     static void datasourceProperties(DynamicPropertyRegistry registry) {

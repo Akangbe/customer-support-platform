@@ -3,11 +3,11 @@ package com.supportplatform.storage;
 import com.supportplatform.AbstractIntegrationTest;
 import org.junit.jupiter.api.BeforeAll;
 import org.testcontainers.containers.MinIOContainer;
-import org.testcontainers.junit.jupiter.Container;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
 
 import java.net.URI;
 
@@ -24,8 +24,12 @@ abstract class AbstractStorageIntegrationTest extends AbstractIntegrationTest {
 
     static final String BUCKET = "attachments-test";
 
-    @Container
+    /** Same singleton-container reasoning as {@code AbstractIntegrationTest.POSTGRES} — started once, never stopped between test classes. */
     static final MinIOContainer MINIO = new MinIOContainer("minio/minio:RELEASE.2025-04-08T15-41-24Z");
+
+    static {
+        MINIO.start();
+    }
 
     @DynamicPropertySource
     static void storageProperties(DynamicPropertyRegistry registry) {
@@ -45,6 +49,10 @@ abstract class AbstractStorageIntegrationTest extends AbstractIntegrationTest {
                 .forcePathStyle(true)
                 .build()) {
             client.createBucket(b -> b.bucket(BUCKET));
+        } catch (BucketAlreadyOwnedByYouException e) {
+            // The MinIO container now outlives a single test class, so the
+            // second class to run finds the bucket already there. Creating
+            // it is meant to be idempotent setup, not an assertion.
         }
     }
 }

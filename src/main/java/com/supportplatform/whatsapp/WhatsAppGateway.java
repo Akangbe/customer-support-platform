@@ -13,8 +13,12 @@ public interface WhatsAppGateway {
 
     SendResult sendText(WhatsAppConnection connection, String toPhone, String body);
 
+    /**
+     * @param params          body-component substitutions, in order; empty for a template with no variables
+     * @param buttonUrlParam  the suffix for a template's dynamic URL button, or {@code null} if it has none
+     */
     SendResult sendTemplate(WhatsAppConnection connection, String toPhone, String templateName,
-                             String languageCode, List<String> params);
+                             String languageCode, List<String> params, String buttonUrlParam);
 
     /** Link-based, not upload-first (ADR-020) — {@code link} is a short-lived presigned storage URL Meta fetches itself. */
     SendResult sendMedia(WhatsAppConnection connection, String toPhone, String mediaType, URI link, String caption);
