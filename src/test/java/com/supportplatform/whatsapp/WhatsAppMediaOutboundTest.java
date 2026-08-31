@@ -57,6 +57,16 @@ class WhatsAppMediaOutboundTest extends AbstractWhatsAppMediaIntegrationTest {
         when(gateway.sendMedia(any(), anyString(), eq("image"), any(URI.class), anyString()))
                 .thenReturn(SendResult.success("wamid.MEDIAOUT1"));
 
+        // sendPending() drains the whole outbox, not just this tenant's — it is
+        // a background poller, so it is deliberately not tenant-scoped. Earlier
+        // test classes share this database and leave their own PENDING text
+        // messages behind, so these have to return something rather than a mock's
+        // default null. The assertion below is still only about sendMedia.
+        when(gateway.sendText(any(), anyString(), anyString()))
+                .thenReturn(SendResult.success("wamid.MEDIAOUT-BYSTANDER"));
+        when(gateway.sendTemplate(any(), anyString(), anyString(), anyString(), any(), any()))
+                .thenReturn(SendResult.success("wamid.MEDIAOUT-BYSTANDER"));
+
         MvcResult sendResult = mockMvc.perform(post("/api/v1/conversations/" + conversationId + "/messages")
                         .session(owner).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"attachmentId\":\"" + attachmentId + "\",\"body\":\"check this out\"}"))

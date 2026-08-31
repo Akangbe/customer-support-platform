@@ -6,6 +6,7 @@ import com.supportplatform.customer.Customer;
 import com.supportplatform.customer.CustomerService;
 import com.supportplatform.message.Message;
 import com.supportplatform.message.MessageService;
+import com.supportplatform.notification.NotificationLogService;
 import com.supportplatform.storage.Attachment;
 import com.supportplatform.storage.AttachmentService;
 import org.slf4j.Logger;
@@ -42,12 +43,13 @@ class WebhookEventHandler {
     private final MessageService messageService;
     private final AttachmentService attachmentService;
     private final WhatsAppGateway gateway;
+    private final NotificationLogService notificationLogService;
     private final ObjectMapper objectMapper;
 
     WebhookEventHandler(WebhookEventRepository webhookEventRepository, WhatsAppConnectionRepository connectionRepository,
                          CustomerService customerService, ConversationService conversationService,
                          MessageService messageService, AttachmentService attachmentService, WhatsAppGateway gateway,
-                         ObjectMapper objectMapper) {
+                         NotificationLogService notificationLogService, ObjectMapper objectMapper) {
         this.webhookEventRepository = webhookEventRepository;
         this.connectionRepository = connectionRepository;
         this.customerService = customerService;
@@ -55,6 +57,7 @@ class WebhookEventHandler {
         this.messageService = messageService;
         this.attachmentService = attachmentService;
         this.gateway = gateway;
+        this.notificationLogService = notificationLogService;
         this.objectMapper = objectMapper;
     }
 
@@ -147,9 +150,25 @@ class WebhookEventHandler {
         attachment.linkToMessage(savedMessage.getId());
     }
 
+    /**
+     * A status event can refer to either kind of outbound send: an agent's
+     * conversation message ({@code message}) or an API-driven notification
+     * ({@code notification_log}). Meta gives us one id space for both, so
+     * try the conversation message first — much the commoner case — and
+     * fall through to notifications. Only an id in neither is genuinely
+     * unrecognized, and is logged and dropped rather than guessed at, the
+     * same as an unmapped {@code phone_number_id}.
+     */
     private void handleStatusUpdate(UUID tenantId, JsonNode status) {
         String waMessageId = status.path("id").asText();
         String metaStatus = status.path("status").asText();
-        messageService.applyDeliveryStatus(tenantId, waMessageId, metaStatus);
+
+        if (messageService.applyDeliveryStatus(tenantId, waMessageId, metaStatus)) {
+            return;
+        }
+        if (notificationLogService.applyDeliveryStatus(tenantId, waMessageId, metaStatus)) {
+            return;
+        }
+        log.warn("Status webhook for unrecognized wa_message_id {} in tenant {}", waMessageId, tenantId);
     }
 }

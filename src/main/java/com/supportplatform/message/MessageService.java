@@ -136,13 +136,16 @@ public class MessageService {
 
     /**
      * Applies a WhatsApp status-webhook event (sent/delivered/read/failed)
-     * to the outbound message it refers to (whatsapp-domain.md §7). A
-     * {@code wa_message_id} we don't recognize is logged and dropped —
-     * never guessed at, same as an unmapped {@code phone_number_id}.
+     * to the outbound message it refers to (whatsapp-domain.md §7).
+     *
+     * <p>Returns whether the id matched a conversation message, rather than
+     * logging "unrecognized" itself: notification-API sends live in
+     * {@code notification_log}, not here, so a miss is not necessarily an
+     * unknown id. The caller decides what an overall miss means.
      */
     @Transactional
-    public void applyDeliveryStatus(UUID tenantId, String waMessageId, String metaStatus) {
-        messageRepository.findByTenantIdAndWaMessageId(tenantId, waMessageId).ifPresentOrElse(message -> {
+    public boolean applyDeliveryStatus(UUID tenantId, String waMessageId, String metaStatus) {
+        return messageRepository.findByTenantIdAndWaMessageId(tenantId, waMessageId).map(message -> {
             switch (metaStatus) {
                 case "delivered" -> message.markDelivered();
                 case "read" -> message.markRead();
@@ -151,7 +154,8 @@ public class MessageService {
                 default -> log.warn("Unrecognized WhatsApp status '{}' for message {}", metaStatus, waMessageId);
             }
             publishEvent(tenantId, message.getConversationId(), message.getId());
-        }, () -> log.warn("Status webhook for unrecognized wa_message_id {} in tenant {}", waMessageId, tenantId));
+            return true;
+        }).orElse(false);
     }
 
     /** A cheap existence check for the inbound media path (storage-domain.md §6) — lets the caller skip a download/upload entirely on a redelivered event, before recordInbound's own dedupe would otherwise run. */

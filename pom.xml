@@ -51,6 +51,14 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
+        <!-- Rate-limit counters only. Redis is an approved ephemeral store
+             (architecture-principles.md Rule 2, system-architecture.md);
+             nothing authoritative lives there. Not required to run the app:
+             the default RateLimiter is in-memory, per ADR-018's posture. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>

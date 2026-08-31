@@ -92,8 +92,11 @@ class MessageDispatcher {
             return gateway.sendMedia(connection, customer.getPhone(), mediaTypeFor(attachment.getContentType()), link, message.getBody());
         }
         if (message.getTemplateName() != null) {
+            // No URL-button param here: an agent-composed template send has no
+            // place to supply one (message-domain.md §3). The notification API
+            // is where that path exists.
             return gateway.sendTemplate(connection, customer.getPhone(), message.getTemplateName(),
-                    message.getTemplateLanguageCode(), message.getTemplateParams());
+                    message.getTemplateLanguageCode(), message.getTemplateParams(), null);
         }
         return gateway.sendText(connection, customer.getPhone(), message.getBody());
     }

@@ -620,3 +620,162 @@ any send failure, from any cause, the same way.
 Revisit toward upload-first (or a hybrid) if real send failures start
 correlating with presigned-URL fetch problems at measurable volume —
 not a concern to design around before it's observed.
+
+---
+
+## ADR-021 — Machine-to-machine access: API keys on a second filter chain, not sessions
+
+**Status:** Accepted
+
+### Context
+
+An external tenant application (Trustpady is the first) needs to send
+an approved WhatsApp template to one of its own customers by calling
+our API — server to server, with no human at a browser. Every existing
+endpoint authenticates the way ADR-014 decided: a session cookie
+issued by `POST /api/v1/auth/login`, backed by
+`HttpSessionSecurityContextRepository`. That mechanism assumes a
+browser, a login form and a human; a backend cron job has none of
+them. And `AuthenticatedPrincipal` — the only thing that currently
+carries a trusted `tenantId` (Rule 3) — is built from a `User` row,
+which a machine caller does not have.
+
+### Options Considered
+
+1. **A service-user account per tenant** — an `app_user` row with a
+   generated password, logging in through the existing flow and
+   holding the resulting cookie.
+2. **API keys on their own stateless filter chain.** A new `api_keys`
+   table, `rd_live_{keyId}.{secret}` credentials, and a second
+   `SecurityFilterChain` scoped to `/api/v1/notifications/**`.
+3. **OAuth 2.0 client-credentials**, issuing short-lived JWTs.
+
+### Decision
+
+**Option 2** — a dedicated `api_keys` table and a second, stateless
+filter chain ordered ahead of the existing one.
+
+### Rationale
+
+- Option 1 looks cheap but corrupts the user model: a service account
+  is an `app_user` that must never appear in the team list, never be
+  assignable to a conversation, never count toward the last-Owner
+  invariant (ADR-016) and never receive an invite email. Every one of
+  those is a special case threaded through code that currently has
+  none, to model something that is not a person.
+- Session cookies are the wrong shape for a machine caller regardless:
+  a backend would have to log in, store a cookie and handle its
+  expiry, and each of those is a failure mode that a per-request
+  credential simply does not have.
+- Option 2 keeps Rule 3 exact and auditable. The tenant is a column on
+  the key row, so it is derived from a trusted server-side lookup on
+  every request; there is no code path by which a request body could
+  supply one. `ApiKeyPrincipal` is the machine analogue of
+  `AuthenticatedPrincipal` and carries the same guarantee.
+- A separate chain means the browser chain is not touched at all. The
+  two have genuinely opposite session semantics (stateful vs.
+  stateless), which is a reason to keep them apart rather than add
+  branches inside one.
+- Option 3 is the right answer at a different scale. It needs a token
+  endpoint, key rotation, JWT verification and expiry handling to
+  authenticate one machine to one API — Rule 5 territory. Nothing in
+  this requirement asks for delegated authorization or third-party
+  clients; keys can be exchanged for OAuth later without the callers
+  noticing, since the credential is opaque to them either way.
+- The secret half is BCrypt-hashed with the same `PasswordEncoder`
+  bean the login flow uses. Storing it reversibly, or as a bare
+  SHA-256, would make a database dump immediately usable; hashing
+  means the plaintext genuinely exists only in the creating response.
+
+### Consequences
+
+**Gain:** machine callers with no user rows, no sessions and no login
+flow; the tenant boundary enforced by a server-side lookup on every
+request; an independent kill switch (`is_active`) per credential, and
+per-key attribution in `notification_logs` when something goes wrong.
+
+**Sacrifice:** BCrypt verification costs roughly 60–100ms per request,
+which puts a floor under this endpoint's latency and a ceiling on its
+throughput. Accepted deliberately: the default budget is 60 requests
+per minute per key, so the cost is nowhere near binding, and the
+alternative — a fast unsalted digest — trades a real security property
+for headroom nothing is asking for. If a tenant ever needs sustained
+high volume, the fix is a short-lived verified-key cache, not a weaker
+hash.
+
+### Revisit Conditions
+
+Revisit toward Option 3 if a third party ever needs to act on a
+tenant's behalf with the tenant's consent (delegated authorization),
+or if keys need to expire on their own rather than being revoked.
+Revisit the hashing cost only against a measured latency problem.
+
+---
+
+## ADR-022 — Rate limiting: pluggable limiter, in-memory by default
+
+**Status:** Accepted
+
+### Context
+
+The notification API is called by machines, so a runaway loop in a
+tenant's own backend is a realistic way to burn their Meta messaging
+quota and our Graph API budget in minutes. It needs a per-key limit.
+`system-architecture.md` already names "rate-limit counters" as one of
+Redis's approved ephemeral uses — but ADR-018 declined to actually
+stand Redis up, on the grounds that Phase A runs a single instance and
+process-local state reaches every request there is.
+
+### Options Considered
+
+1. **Redis only** — add the dependency and require it to run.
+2. **In-memory only** — a `ConcurrentHashMap`, like `LoginAttemptService`.
+3. **A `RateLimiter` interface with both implementations**, selected
+   by configuration.
+
+### Decision
+
+**Option 3.** `RedisRateLimiter` and `InMemoryRateLimiter` behind the
+`RateLimiter` boundary, with in-memory as the default and
+`app.rate-limit.redis-enabled=true` switching over.
+
+### Rationale
+
+- Option 1 would make Redis a hard boot dependency for local
+  development, CI and the current single-instance deployment, none of
+  which need it. That is precisely the cost ADR-018 declined to pay.
+- Option 2 is correct today and silently wrong the moment a second
+  instance exists: two instances would each grant a caller the full
+  budget, and the limit would quietly become 2n without anything
+  failing loudly enough to notice.
+- Option 3 is the interface/implementation split this codebase already
+  applies to WhatsApp, storage and email (Rule 4's pattern), so it
+  costs one small interface rather than a new architectural idea.
+  `RedisRateLimiter` is the only class permitted to import a Redis
+  shape.
+- Both implementations share `SlidingWindow`, so switching between
+  them cannot change the limit's observable behaviour. A plain fixed
+  window would let a caller spend `2 * limit` across a bucket
+  boundary; the weighted two-bucket approximation closes that with
+  nothing more than `INCR`/`EXPIRE`/`GET`.
+- `RedisRateLimiter` fails open. Rule 2 already says Redis is never
+  authoritative — a throttling outage must degrade to "unthrottled",
+  not to "API down", and the request is still authenticated against
+  Postgres, which is what actually protects tenant data.
+
+### Consequences
+
+**Gain:** no new infrastructure to run today; a one-property switch
+when a second instance appears; identical limit semantics either way.
+
+**Sacrifice:** two implementations to keep in step, and a real
+operational trap — scaling to more than one instance without flipping
+the property silently multiplies every limit. Mitigated by comments at
+both the property and the Render blueprint, but it is a footgun that
+Option 1 would not have.
+
+### Revisit Conditions
+
+Delete `InMemoryRateLimiter` and make Redis mandatory once more than
+one backend instance is permanent — at that point the fallback is a
+liability, not a convenience.
