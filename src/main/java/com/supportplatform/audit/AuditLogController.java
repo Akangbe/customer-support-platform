@@ -27,3 +27,4 @@ public class AuditLogController {
                 .map(AuditLogEntryResponse::from);
     }
 }
+

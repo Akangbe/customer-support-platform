@@ -38,6 +38,8 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 public class MessageService {
 
     private static final Logger log = LoggerFactory.getLogger(MessageService.class);
+    /** Only for a failed status that carried no {@code errors} block — the caller normally supplies Meta's own text. */
+    private static final String UNSPECIFIED_FAILURE = "WhatsApp reported delivery failure";
     private static final Duration SERVICE_WINDOW = Duration.ofHours(24);
 
     private final MessageRepository messageRepository;
@@ -142,14 +144,20 @@ public class MessageService {
      * logging "unrecognized" itself: notification-API sends live in
      * {@code notification_log}, not here, so a miss is not necessarily an
      * unknown id. The caller decides what an overall miss means.
+     *
+     * @param failureReason Meta's own reason for a {@code failed} status,
+     *                      already flattened by the caller (the only place
+     *                      the raw webhook shape is known, Rule 4);
+     *                      {@code null} for every other status
      */
     @Transactional
-    public boolean applyDeliveryStatus(UUID tenantId, String waMessageId, String metaStatus) {
+    public boolean applyDeliveryStatus(UUID tenantId, String waMessageId, String metaStatus, String failureReason) {
         return messageRepository.findByTenantIdAndWaMessageId(tenantId, waMessageId).map(message -> {
             switch (metaStatus) {
                 case "delivered" -> message.markDelivered();
                 case "read" -> message.markRead();
-                case "failed" -> message.markFailed("WhatsApp reported delivery failure");
+                case "failed" -> message.markFailed(
+                        failureReason == null || failureReason.isBlank() ? UNSPECIFIED_FAILURE : failureReason);
                 case "sent" -> { /* already SENT when we dispatched it; nothing to do */ }
                 default -> log.warn("Unrecognized WhatsApp status '{}' for message {}", metaStatus, waMessageId);
             }

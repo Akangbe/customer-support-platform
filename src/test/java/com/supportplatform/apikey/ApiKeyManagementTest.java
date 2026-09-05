@@ -11,7 +11,6 @@ import tools.jackson.databind.JsonNode;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -102,7 +101,7 @@ class ApiKeyManagementTest extends AbstractApiKeyIntegrationTest {
         String keyId = plaintext.substring("rd_live_".length(), plaintext.indexOf('.'));
         UUID id = apiKeyRepository.findByKeyId(keyId).orElseThrow().getId();
 
-        mockMvc.perform(delete("/api/v1/api-keys/" + id).session(owner))
+        mockMvc.perform(post("/api/v1/api-keys/" + id + "/deactivate").session(owner))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false))
                 .andExpect(jsonPath("$.revokedAt").isNotEmpty());
@@ -119,7 +118,7 @@ class ApiKeyManagementTest extends AbstractApiKeyIntegrationTest {
 
         // Rule 3: B's session cannot reach A's row, so this is a 404, not a 403 —
         // B is told nothing about whether that id exists.
-        mockMvc.perform(delete("/api/v1/api-keys/" + idA).session(ownerB))
+        mockMvc.perform(post("/api/v1/api-keys/" + idA + "/deactivate").session(ownerB))
                 .andExpect(status().isNotFound());
 
         assertThat(apiKeyRepository.findByKeyId(keyIdA).orElseThrow().isActive()).isTrue();

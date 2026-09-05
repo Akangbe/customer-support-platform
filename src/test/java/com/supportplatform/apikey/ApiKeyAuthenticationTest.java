@@ -39,6 +39,7 @@ class ApiKeyAuthenticationTest extends AbstractApiKeyIntegrationTest {
     void aValidKeyAuthenticatesAndResolvesItsTenant() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Auth Co 1", "Auth Owner 1", "auth-owner-1@example.com", "password123");
         connectWhatsApp(owner, "auth-pn-1");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Valid key");
 
         mockMvc.perform(post("/api/v1/notifications/send")
@@ -52,6 +53,7 @@ class ApiKeyAuthenticationTest extends AbstractApiKeyIntegrationTest {
     void theXApiKeyHeaderIsAcceptedToo() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Auth Co 2", "Auth Owner 2", "auth-owner-2@example.com", "password123");
         connectWhatsApp(owner, "auth-pn-2");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Header key");
 
         mockMvc.perform(post("/api/v1/notifications/send")
@@ -75,6 +77,7 @@ class ApiKeyAuthenticationTest extends AbstractApiKeyIntegrationTest {
         // is not a machine caller, and must still present a key here.
         MockHttpSession owner = registerTenantAndGetSession("Auth Co 3", "Auth Owner 3", "auth-owner-3@example.com", "password123");
         connectWhatsApp(owner, "auth-pn-3");
+        approveTemplate(owner, "order_shipped");
 
         mockMvc.perform(post("/api/v1/notifications/send")
                         .session(owner)
@@ -97,6 +100,7 @@ class ApiKeyAuthenticationTest extends AbstractApiKeyIntegrationTest {
     void aWrongSecretOnARealKeyIdIsRejected() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Auth Co 4", "Auth Owner 4", "auth-owner-4@example.com", "password123");
         connectWhatsApp(owner, "auth-pn-4");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Real key");
         String keyId = key.substring("rd_live_".length(), key.indexOf('.'));
 
@@ -111,6 +115,7 @@ class ApiKeyAuthenticationTest extends AbstractApiKeyIntegrationTest {
     void aRevokedKeyStopsWorkingImmediately() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Auth Co 5", "Auth Owner 5", "auth-owner-5@example.com", "password123");
         connectWhatsApp(owner, "auth-pn-5");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Doomed key");
         String keyId = key.substring("rd_live_".length(), key.indexOf('.'));
         UUID id = apiKeyRepository.findByKeyId(keyId).orElseThrow().getId();
@@ -121,8 +126,7 @@ class ApiKeyAuthenticationTest extends AbstractApiKeyIntegrationTest {
                         .content(sendRequestBody("+14155559106", "order_shipped")))
                 .andExpect(status().isAccepted());
 
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .delete("/api/v1/api-keys/" + id).session(owner))
+        mockMvc.perform(post("/api/v1/api-keys/" + id + "/deactivate").session(owner))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/notifications/send")
@@ -136,6 +140,7 @@ class ApiKeyAuthenticationTest extends AbstractApiKeyIntegrationTest {
     void usingAKeyStampsLastUsedAt() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Auth Co 6", "Auth Owner 6", "auth-owner-6@example.com", "password123");
         connectWhatsApp(owner, "auth-pn-6");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Tracked key");
         String keyId = key.substring("rd_live_".length(), key.indexOf('.'));
 
