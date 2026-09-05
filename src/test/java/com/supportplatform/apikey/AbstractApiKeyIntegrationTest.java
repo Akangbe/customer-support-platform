@@ -44,6 +44,23 @@ public abstract class AbstractApiKeyIntegrationTest extends AbstractIntegrationT
                 .andExpect(status().isOk());
     }
 
+    /**
+     * Puts a template on the caller's tenant allowlist. Every send now goes
+     * through that gate, so a test that wants a send to reach the gateway
+     * has to register its template first — exactly as a real tenant does.
+     */
+    protected void approveTemplate(MockHttpSession session, String templateName) throws Exception {
+        registerTemplate(session, templateName, "APPROVED");
+    }
+
+    protected void registerTemplate(MockHttpSession session, String templateName, String status) throws Exception {
+        mockMvc.perform(post("/api/v1/whatsapp/templates")
+                        .session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"%s\",\"status\":\"%s\"}".formatted(templateName, status)))
+                .andExpect(status().isCreated());
+    }
+
     protected String sendRequestBody(String recipient, String templateName) {
         return """
                 {"recipient":"%s","templateName":"%s"}

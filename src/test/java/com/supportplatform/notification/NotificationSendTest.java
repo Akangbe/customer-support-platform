@@ -42,6 +42,7 @@ class NotificationSendTest extends AbstractApiKeyIntegrationTest {
         MockHttpSession owner = registerTenantAndGetSession("Send Co 1", "Send Owner 1", "send-owner-1@example.com", "password123");
         UUID tenantId = extractTenantId(owner);
         connectWhatsApp(owner, "send-pn-1");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Sender");
 
         when(gateway.sendTemplate(any(), anyString(), anyString(), anyString(), any(), isNull()))
@@ -72,6 +73,7 @@ class NotificationSendTest extends AbstractApiKeyIntegrationTest {
     void languageCodeDefaultsToEnglishAndBodyParamsAreForwarded() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Send Co 2", "Send Owner 2", "send-owner-2@example.com", "password123");
         connectWhatsApp(owner, "send-pn-2");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Sender");
 
         when(gateway.sendTemplate(any(), anyString(), anyString(), anyString(), any(), any()))
@@ -97,6 +99,7 @@ class NotificationSendTest extends AbstractApiKeyIntegrationTest {
     void anExplicitLanguageCodeIsUsed() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Send Co 3", "Send Owner 3", "send-owner-3@example.com", "password123");
         connectWhatsApp(owner, "send-pn-3");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Sender");
 
         when(gateway.sendTemplate(any(), anyString(), anyString(), anyString(), any(), isNull()))
@@ -117,15 +120,20 @@ class NotificationSendTest extends AbstractApiKeyIntegrationTest {
     void aMetaRejectionIsACleanErrorAndStillLogged() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Send Co 4", "Send Owner 4", "send-owner-4@example.com", "password123");
         connectWhatsApp(owner, "send-pn-4");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Sender");
 
         when(gateway.sendTemplate(any(), anyString(), anyString(), anyString(), any(), isNull()))
                 .thenReturn(SendResult.failure("(#132001) Template name does not exist in the translation"));
 
+        // Has to be an allowlisted template: an unregistered name is stopped
+        // at the gate with a 422 and never reaches Meta at all. What this
+        // test covers is the other failure — Meta refusing a send we did
+        // permit — so the template must get past the gate first.
         MvcResult result = mockMvc.perform(post("/api/v1/notifications/send")
                         .header("Authorization", "Bearer " + key)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(sendRequestBody("+14155559304", "no_such_template")))
+                        .content(sendRequestBody("+14155559304", "order_shipped")))
                 .andExpect(status().isBadGateway())
                 .andReturn();
 
@@ -160,6 +168,7 @@ class NotificationSendTest extends AbstractApiKeyIntegrationTest {
     void aNonE164RecipientIsRejectedBeforeAnyMetaCall() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Send Co 6", "Send Owner 6", "send-owner-6@example.com", "password123");
         connectWhatsApp(owner, "send-pn-6");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Sender");
 
         for (String bad : List.of("14155559306", "+0415555930", "+1-415-555-9306", "not-a-number")) {
@@ -178,6 +187,7 @@ class NotificationSendTest extends AbstractApiKeyIntegrationTest {
     void aBlankTemplateNameIsRejected() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Send Co 7", "Send Owner 7", "send-owner-7@example.com", "password123");
         connectWhatsApp(owner, "send-pn-7");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Sender");
 
         mockMvc.perform(post("/api/v1/notifications/send")
@@ -193,6 +203,7 @@ class NotificationSendTest extends AbstractApiKeyIntegrationTest {
         MockHttpSession ownerA = registerTenantAndGetSession("Send Co 8a", "Send Owner 8a", "send-owner-8a@example.com", "password123");
         MockHttpSession ownerB = registerTenantAndGetSession("Send Co 8b", "Send Owner 8b", "send-owner-8b@example.com", "password123");
         connectWhatsApp(ownerA, "send-pn-8a");
+        approveTemplate(ownerA, "order_shipped");
         connectWhatsApp(ownerB, "send-pn-8b");
 
         UUID tenantA = extractTenantId(ownerA);
@@ -230,6 +241,7 @@ class NotificationSendTest extends AbstractApiKeyIntegrationTest {
     void theResponseNeverCarriesTheMetaToken() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Send Co 9", "Send Owner 9", "send-owner-9@example.com", "password123");
         connectWhatsApp(owner, "send-pn-9");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Sender");
 
         when(gateway.sendTemplate(any(), anyString(), anyString(), anyString(), any(), isNull()))

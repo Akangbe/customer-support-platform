@@ -40,6 +40,7 @@ class NotificationMockModeTest extends AbstractApiKeyIntegrationTest {
     void aSendSucceedsWithoutCallingMeta() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Mock Co 1", "Mock Owner 1", "mock-owner-1@example.com", "password123");
         connectWhatsApp(owner, "mock-pn-1");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Mock sender");
 
         MvcResult result = mockMvc.perform(post("/api/v1/notifications/send")

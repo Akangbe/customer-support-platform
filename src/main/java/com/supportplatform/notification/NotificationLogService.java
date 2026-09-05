@@ -25,6 +25,8 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 public class NotificationLogService {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationLogService.class);
+    /** Only for a failed status that carried no {@code errors} block — the caller normally supplies Meta's own text. */
+    private static final String UNSPECIFIED_FAILURE = "WhatsApp reported delivery failure";
 
     private final NotificationLogRepository notificationLogRepository;
 
@@ -37,17 +39,22 @@ public class NotificationLogService {
      * Idempotent on {@code (tenantId, metaMessageId)} and monotonic (Rule 7)
      * — the entity's own guards refuse to walk a status backwards.
      *
+     * @param failureReason Meta's own reason for a {@code failed} status,
+     *                      already flattened by the caller (which is the only
+     *                      place the raw webhook shape is known, Rule 4);
+     *                      {@code null} for every other status
      * @return {@code true} if this id belonged to a notification, so the
      *         caller can tell "handled here" from "not ours"
      */
     @Transactional
-    public boolean applyDeliveryStatus(UUID tenantId, String metaMessageId, String metaStatus) {
+    public boolean applyDeliveryStatus(UUID tenantId, String metaMessageId, String metaStatus, String failureReason) {
         return notificationLogRepository.findByTenantIdAndMetaMessageId(tenantId, metaMessageId)
                 .map(notification -> {
                     switch (metaStatus) {
                         case "delivered" -> notification.markDelivered();
                         case "read" -> notification.markRead();
-                        case "failed" -> notification.markDeliveryFailed("WhatsApp reported delivery failure");
+                        case "failed" -> notification.markDeliveryFailed(
+                                failureReason == null || failureReason.isBlank() ? UNSPECIFIED_FAILURE : failureReason);
                         case "sent" -> { /* already SENT when the send returned; nothing to do */ }
                         default -> log.warn("Unrecognized WhatsApp status '{}' for notification {}", metaStatus, metaMessageId);
                     }

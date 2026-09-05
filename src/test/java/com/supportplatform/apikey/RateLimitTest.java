@@ -9,6 +9,8 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -23,16 +25,24 @@ class RateLimitTest extends AbstractApiKeyIntegrationTest {
     @MockitoBean
     private WhatsAppGateway gateway;
 
+    /**
+     * A distinct id per send, because Meta never reissues one and
+     * {@code uq_notification_log_tenant_meta_message_id} enforces that: a
+     * constant here makes the second accepted send in a tenant collide and
+     * come back 500, which reads exactly like a throttling bug.
+     */
     @BeforeEach
     void stubGateway() {
+        AtomicInteger sequence = new AtomicInteger();
         when(gateway.sendTemplate(any(), anyString(), anyString(), anyString(), any(), isNull()))
-                .thenReturn(SendResult.success("wamid.RATE1"));
+                .thenAnswer(invocation -> SendResult.success("wamid.RATE" + sequence.incrementAndGet()));
     }
 
     @Test
     void exceedingTheKeysLimitReturns429WithRetryAfter() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Rate Co 1", "Rate Owner 1", "rate-owner-1@example.com", "password123");
         connectWhatsApp(owner, "rate-pn-1");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "Tight limit", 2);
 
         for (int i = 0; i < 2; i++) {
@@ -52,6 +62,7 @@ class RateLimitTest extends AbstractApiKeyIntegrationTest {
     void theLimitIsPerKeyNotGlobal() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Rate Co 2", "Rate Owner 2", "rate-owner-2@example.com", "password123");
         connectWhatsApp(owner, "rate-pn-2");
+        approveTemplate(owner, "order_shipped");
         String spentKey = issueApiKey(owner, "Spent", 1);
         String freshKey = issueApiKey(owner, "Fresh", 1);
 
@@ -66,6 +77,7 @@ class RateLimitTest extends AbstractApiKeyIntegrationTest {
     void aThrottledRequestNeverReachesTheGateway() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Rate Co 3", "Rate Owner 3", "rate-owner-3@example.com", "password123");
         connectWhatsApp(owner, "rate-pn-3");
+        approveTemplate(owner, "order_shipped");
         String key = issueApiKey(owner, "One shot", 1);
 
         send(key, "+14155559213").andExpect(status().isAccepted());
