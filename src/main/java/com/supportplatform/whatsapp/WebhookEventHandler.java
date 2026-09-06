@@ -11,6 +11,7 @@ import com.supportplatform.storage.Attachment;
 import com.supportplatform.storage.AttachmentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -47,12 +48,14 @@ class WebhookEventHandler {
     private final AttachmentService attachmentService;
     private final WhatsAppGateway gateway;
     private final NotificationLogService notificationLogService;
+    private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
     WebhookEventHandler(WebhookEventRepository webhookEventRepository, WhatsAppConnectionRepository connectionRepository,
                          CustomerService customerService, ConversationService conversationService,
                          MessageService messageService, AttachmentService attachmentService, WhatsAppGateway gateway,
-                         NotificationLogService notificationLogService, ObjectMapper objectMapper) {
+                         NotificationLogService notificationLogService, ApplicationEventPublisher eventPublisher,
+                         ObjectMapper objectMapper) {
         this.webhookEventRepository = webhookEventRepository;
         this.connectionRepository = connectionRepository;
         this.customerService = customerService;
@@ -61,6 +64,7 @@ class WebhookEventHandler {
         this.attachmentService = attachmentService;
         this.gateway = gateway;
         this.notificationLogService = notificationLogService;
+        this.eventPublisher = eventPublisher;
         this.objectMapper = objectMapper;
     }
 
@@ -181,22 +185,41 @@ class WebhookEventHandler {
     private void handleStatusUpdate(UUID tenantId, JsonNode status) {
         String waMessageId = status.path("id").asText();
         String metaStatus = status.path("status").asText();
-        String failureReason = FAILED_STATUS.equals(metaStatus) ? describeStatusError(status) : null;
+        boolean failed = FAILED_STATUS.equals(metaStatus);
+        String failureReason = failed ? describeStatusError(status) : null;
 
-        if (failureReason != null) {
+        if (failed) {
             // The only place this reason is ever visible outside the row we
             // are about to write, and the one line worth grepping for when a
             // recipient reports a message that never arrived.
             log.warn("WhatsApp reported delivery failure for {} in tenant {}: {}", waMessageId, tenantId, failureReason);
         }
 
+        // Resolved once, before either lookup, so the ordinary failure path
+        // costs nothing: an unknown or absent code yields empty and no
+        // further work happens.
+        Optional<MetaBlockingError> blocking = failed
+                ? MetaBlockingError.forCode(status.path("errors").path(0).path("code").asText(null))
+                : Optional.empty();
+
         if (messageService.applyDeliveryStatus(tenantId, waMessageId, metaStatus, failureReason)) {
+            // A conversation message has no template, so nothing to name.
+            blocking.ifPresent(error -> publishBlocked(tenantId, error, null, failureReason));
             return;
         }
         if (notificationLogService.applyDeliveryStatus(tenantId, waMessageId, metaStatus, failureReason)) {
+            blocking.ifPresent(error -> publishBlocked(tenantId, error,
+                    error.getScope() == MetaBlockingError.Scope.TEMPLATE
+                            ? notificationLogService.findTemplateName(tenantId, waMessageId).orElse(null)
+                            : null,
+                    failureReason));
             return;
         }
         log.warn("Status webhook for unrecognized wa_message_id {} in tenant {}", waMessageId, tenantId);
+    }
+
+    private void publishBlocked(UUID tenantId, MetaBlockingError error, String templateName, String failureReason) {
+        eventPublisher.publishEvent(new DeliveryBlockedEvent(tenantId, error, templateName, failureReason));
     }
 
     /**

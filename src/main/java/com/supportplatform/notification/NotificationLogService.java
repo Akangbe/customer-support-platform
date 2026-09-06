@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
@@ -61,6 +62,18 @@ public class NotificationLogService {
                     return true;
                 })
                 .orElse(false);
+    }
+
+    /**
+     * The template a given send used, for an alert that needs to name it.
+     * Empty when the id belongs to a conversation message rather than a
+     * notification — the caller treats that as "no template involved",
+     * not as an error.
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> findTemplateName(UUID tenantId, String metaMessageId) {
+        return notificationLogRepository.findByTenantIdAndMetaMessageId(tenantId, metaMessageId)
+                .map(NotificationLog::getTemplateName);
     }
 
     @Transactional(readOnly = true)
