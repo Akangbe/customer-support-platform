@@ -33,6 +33,18 @@ app:
       mode: ${APP_RECIPIENT_CEILING_MODE:observe}
       max-per-window: ${APP_RECIPIENT_CEILING_MAX:10}
       window: ${APP_RECIPIENT_CEILING_WINDOW:PT1H}
+    usage-alert:
+      # Emails the tenant's Owners and Admins -- and the key's contact, when
+      # one is on file -- the first time a UTC day's sends cross each value.
+      #
+      # Escalating rather than repeating: 100 is "a busy morning, worth
+      # knowing", 500 is "something is wrong", 1000 is "stop and look now".
+      # A single alarm would be either too low to mean anything or too late
+      # to help: 2026-09-11 ended at 657 against a 200-300 baseline, so one
+      # set at 1000 would never have fired and one at 100 would have fired
+      # on ordinary days too. Only the highest value a day reaches is sent.
+      enabled: ${APP_USAGE_ALERT_ENABLED:true}
+      thresholds: ${APP_USAGE_ALERT_THRESHOLDS:100,500,1000}
   scheduling:
     enabled: ${APP_SCHEDULING_ENABLED:true}
   storage:

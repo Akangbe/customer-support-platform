@@ -15,6 +15,8 @@ public record ApiKeyResponse(
         UUID id,
         String keyId,
         String name,
+        /** Optional; null when no one outside the tenant is behind this key. */
+        String contactEmail,
         int rateLimit,
         boolean active,
         Instant lastUsedAt,
@@ -23,7 +25,8 @@ public record ApiKeyResponse(
 ) {
 
     public static ApiKeyResponse from(ApiKey apiKey) {
-        return new ApiKeyResponse(apiKey.getId(), apiKey.getKeyId(), apiKey.getName(), apiKey.getRateLimit(),
-                apiKey.isActive(), apiKey.getLastUsedAt(), apiKey.getCreatedAt(), apiKey.getRevokedAt());
+        return new ApiKeyResponse(apiKey.getId(), apiKey.getKeyId(), apiKey.getName(), apiKey.getContactEmail(),
+                apiKey.getRateLimit(), apiKey.isActive(), apiKey.getLastUsedAt(), apiKey.getCreatedAt(),
+                apiKey.getRevokedAt());
     }
 }

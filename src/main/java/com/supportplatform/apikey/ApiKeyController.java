@@ -39,7 +39,7 @@ public class ApiKeyController {
     public CreatedApiKeyResponse create(@AuthenticationPrincipal AuthenticatedPrincipal principal,
                                           @Valid @RequestBody CreateApiKeyRequest request) {
         ApiKeyService.IssuedApiKey issued = apiKeyService.create(principal.getTenantId(), principal.getUserId(),
-                principal.getRole(), request.name(), request.rateLimit());
+                principal.getRole(), request.name(), request.rateLimit(), request.contactEmail());
         return CreatedApiKeyResponse.of(issued.apiKey(), issued.plaintextKey());
     }
 

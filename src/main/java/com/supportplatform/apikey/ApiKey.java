@@ -41,6 +41,15 @@ public class ApiKey {
     @Column(nullable = false, length = 200)
     private String name;
 
+    /**
+     * Where to reach whoever is behind this key. Optional: a key issued for
+     * a tenant's own backend has no third party to notify, and one issued to
+     * a partner does. Alerts about this key's traffic go here as well as to
+     * the tenant's Owners and Admins.
+     */
+    @Column(name = "contact_email", length = 320)
+    private String contactEmail;
+
     @Column(name = "rate_limit", nullable = false)
     private int rateLimit;
 
@@ -109,6 +118,14 @@ public class ApiKey {
 
     public String getName() {
         return name;
+    }
+
+    public String getContactEmail() {
+        return contactEmail;
+    }
+
+    public void setContactEmail(String contactEmail) {
+        this.contactEmail = contactEmail;
     }
 
     public int getRateLimit() {

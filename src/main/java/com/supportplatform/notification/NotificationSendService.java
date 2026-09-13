@@ -53,16 +53,18 @@ public class NotificationSendService {
     private final WhatsAppGateway gateway;
     private final WhatsAppTemplateService templateService;
     private final RecipientCeiling recipientCeiling;
+    private final DailyUsageMonitor dailyUsageMonitor;
 
     public NotificationSendService(WhatsAppConnectionRepository connectionRepository,
                                      NotificationLogRepository notificationLogRepository,
                                      WhatsAppGateway gateway, WhatsAppTemplateService templateService,
-                                     RecipientCeiling recipientCeiling) {
+                                     RecipientCeiling recipientCeiling, DailyUsageMonitor dailyUsageMonitor) {
         this.connectionRepository = connectionRepository;
         this.notificationLogRepository = notificationLogRepository;
         this.gateway = gateway;
         this.templateService = templateService;
         this.recipientCeiling = recipientCeiling;
+        this.dailyUsageMonitor = dailyUsageMonitor;
     }
 
     public SendOutcome send(ApiKeyPrincipal principal, SendNotificationRequest request, String idempotencyKey) {
@@ -132,6 +134,10 @@ public class NotificationSendService {
             log.info("SEND LOGGED notification={} status=SENT wamid={} tenant={} key={} template='{}'",
                     sent.getId(), result.waMessageId(), principal.tenantId(), principal.keyId(),
                     request.templateName());
+            // After the row exists, so the count it takes includes this send.
+            // Never throws — monitoring that can fail a send turns an
+            // observability problem into an outage.
+            dailyUsageMonitor.recordSend(principal.tenantId(), principal.apiKeyId());
             return SendOutcome.sent(sent);
         }
 
