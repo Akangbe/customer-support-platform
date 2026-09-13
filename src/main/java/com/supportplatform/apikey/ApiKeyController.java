@@ -2,12 +2,14 @@ package com.supportplatform.apikey;
 
 import com.supportplatform.apikey.dto.ApiKeyResponse;
 import com.supportplatform.apikey.dto.CreateApiKeyRequest;
+import com.supportplatform.apikey.dto.UpdateApiKeyRequest;
 import com.supportplatform.apikey.dto.CreatedApiKeyResponse;
 import com.supportplatform.auth.AuthenticatedPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -48,6 +50,24 @@ public class ApiKeyController {
         return apiKeyService.listForTenant(principal.getTenantId(), principal.getRole()).stream()
                 .map(ApiKeyResponse::from)
                 .toList();
+    }
+
+    /**
+     * Edits a key's settings without reissuing it. Reissuing to change a
+     * contact address would mean a live integration swapping credentials for
+     * an administrative edit, which is the kind of avoidable risk that turns
+     * a small change into an outage.
+     *
+     * <p>PATCH rather than PUT: every field is optional and an omitted one is
+     * left alone, so a caller changing one setting need not restate the rest
+     * and cannot blank a field by forgetting it.
+     */
+    @PatchMapping("/{apiKeyId}")
+    public ApiKeyResponse update(@AuthenticationPrincipal AuthenticatedPrincipal principal,
+                                   @PathVariable UUID apiKeyId,
+                                   @Valid @RequestBody UpdateApiKeyRequest request) {
+        return ApiKeyResponse.from(apiKeyService.update(principal.getTenantId(), principal.getUserId(),
+                principal.getRole(), apiKeyId, request.name(), request.contactEmail(), request.rateLimit()));
     }
 
     /**

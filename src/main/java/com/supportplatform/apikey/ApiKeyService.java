@@ -14,12 +14,14 @@ import org.springframework.web.server.ResponseStatusException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.springframework.http.HttpStatus.BAD_REQUEST;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 /**
@@ -86,6 +88,83 @@ public class ApiKeyService {
     public List<ApiKey> listForTenant(UUID tenantId, UserRole actingRole) {
         requireOwnerOrAdmin(actingRole);
         return apiKeyRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+    }
+
+    /**
+     * Edits a key's settings in place. Scoped by tenant, so one tenant can
+     * never reach another's key (Rule 3) — a key id belonging to someone
+     * else is a 404, indistinguishable from one that does not exist.
+     *
+     * <p>Every argument is optional and {@code null} means "leave alone".
+     * {@code contactEmail} additionally accepts {@code ""} to clear, because
+     * removing an address has to be expressible: a partner whose ops contact
+     * leaves should stop receiving a tenant's volume alerts, and a JSON body
+     * cannot distinguish "null" from "absent".
+     *
+     * <p>Cannot touch keyId, the secret hash, the tenant or the active flag.
+     * The first three are identity rather than settings; the last has its own
+     * verbs so an operator must say which direction they meant.
+     */
+    @Transactional
+    public ApiKey update(UUID tenantId, UUID actorUserId, UserRole actingRole, UUID apiKeyId,
+                           String name, String contactEmail, Integer rateLimit) {
+        requireOwnerOrAdmin(actingRole);
+
+        ApiKey apiKey = requireOwnKey(tenantId, apiKeyId);
+        List<String> changed = new ArrayList<>();
+
+        if (name != null && !name.isBlank()) {
+            apiKey.setName(name.trim());
+            changed.add("name");
+        }
+        if (contactEmail != null) {
+            String trimmed = contactEmail.trim();
+            if (trimmed.isEmpty()) {
+                apiKey.setContactEmail(null);
+            } else {
+                apiKey.setContactEmail(requireEmailShaped(trimmed));
+            }
+            changed.add("contactEmail");
+        }
+        if (rateLimit != null) {
+            apiKey.setRateLimit(rateLimit);
+            changed.add("rateLimit");
+        }
+
+        if (changed.isEmpty()) {
+            // Nothing asked for, nothing recorded. An audit entry saying a key
+            // was updated when it was not is worse than no entry at all.
+            return apiKey;
+        }
+
+        // Which fields moved, never their values. The address itself stays out
+        // of the audit trail for the same reason it stays out of the create
+        // entry: the log records that configuration changed, not personal data.
+        eventPublisher.publishEvent(new AuditEvent(tenantId, actorUserId, AuditAction.API_KEY_UPDATED,
+                "API_KEY", apiKey.getId(),
+                "Updated API key (key_id=" + apiKey.getKeyId() + "): " + String.join(", ", changed)));
+
+        return apiKey;
+    }
+
+    /**
+     * Validated here rather than with {@code @Email} on the DTO, because the
+     * field also has to accept {@code ""} as "clear" and a bean-validation
+     * annotation cannot express "a real address, or nothing at all" without
+     * making the empty case ambiguous.
+     */
+    private static String requireEmailShaped(String candidate) {
+        int at = candidate.indexOf('@');
+        boolean shaped = at > 0
+                && at == candidate.lastIndexOf('@')
+                && at < candidate.length() - 1
+                && candidate.indexOf('.', at) > at + 1
+                && candidate.chars().noneMatch(Character::isWhitespace);
+        if (!shaped) {
+            throw new ResponseStatusException(BAD_REQUEST,
+                    "contactEmail must be a valid email address, or \"\" to remove the one on file.");
+        }
+        return candidate;
     }
 
     /**

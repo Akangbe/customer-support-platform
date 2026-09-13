@@ -120,6 +120,14 @@ public class ApiKey {
         return name;
     }
 
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public void setRateLimit(int rateLimit) {
+        this.rateLimit = rateLimit;
+    }
+
     public String getContactEmail() {
         return contactEmail;
     }
