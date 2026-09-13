@@ -10,10 +10,12 @@ import com.supportplatform.whatsapp.WhatsAppTemplate;
 import com.supportplatform.whatsapp.WhatsAppTemplateService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.springframework.http.HttpStatus.CONFLICT;
@@ -31,6 +33,15 @@ import static org.springframework.http.HttpStatus.CONFLICT;
  * <p>Deliberately not {@code @Transactional}: the log row must survive the
  * failure path. Each {@code save} runs in its own transaction, so writing
  * "FAILED" and then throwing does not roll that record back.
+ *
+ * <h2>Idempotency (V15)</h2>
+ * <p>The Graph call is preceded by a reservation row. When the caller
+ * supplied an {@code Idempotency-Key}, that row carries it and a unique
+ * index makes every concurrent or later retry collide and be answered from
+ * the original instead of reaching Meta. When the caller supplied nothing,
+ * the row is still claimed — one code path, and a PENDING row left behind
+ * is evidence a request died mid-send — but no deduplication happens, and
+ * none is invented. See {@link #normaliseKey}.
  */
 @Service
 public class NotificationSendService {
@@ -54,7 +65,7 @@ public class NotificationSendService {
         this.recipientCeiling = recipientCeiling;
     }
 
-    public NotificationLog send(ApiKeyPrincipal principal, SendNotificationRequest request) {
+    public SendOutcome send(ApiKeyPrincipal principal, SendNotificationRequest request, String idempotencyKey) {
         // ENTRY. The recipient is logged as a masked suffix, not in full: this
         // line is the one emitted on every request, and a log aggregator full
         // of complete customer phone numbers is a data-protection problem the
@@ -77,35 +88,95 @@ public class NotificationSendService {
         // sent and never billed.
         recipientCeiling.check(principal.tenantId(), request.recipient(), request.templateName(), Instant.now());
 
+        String key = normaliseKey(idempotencyKey);
+        if (key != null) {
+            Optional<NotificationLog> prior =
+                    notificationLogRepository.findByTenantIdAndIdempotencyKey(principal.tenantId(), key);
+            if (prior.isPresent()) {
+                return replay(prior.get(), principal, key, "prior send");
+            }
+        }
+
+        // Claim the row before calling Meta. saveAndFlush, not save: the
+        // INSERT has to reach the database now so the unique index can reject
+        // a concurrent retry. A deferred flush would let both requests sail
+        // past this point and both call Meta.
+        NotificationLog reserved;
+        try {
+            reserved = notificationLogRepository.saveAndFlush(NotificationLog.reserve(principal.tenantId(),
+                    principal.apiKeyId(), request.recipient(), request.templateName(), request.languageCode(), key));
+        } catch (DataIntegrityViolationException e) {
+            // Lost the race: another in-flight request claimed this key
+            // between the lookup above and this insert.
+            NotificationLog winner = notificationLogRepository
+                    .findByTenantIdAndIdempotencyKey(principal.tenantId(), key)
+                    .orElseThrow(() -> e);
+            return replay(winner, principal, key, "concurrent retry");
+        }
+
         // CALL. Deliberately immediately before the Graph API call rather than
         // after: if the process is killed mid-call (a Render instance being
         // spun down, say) this is the last line written, and its absence or
         // presence is what says whether Meta was ever contacted — which is
         // exactly the question a duplicate investigation turns on.
-        log.info("SEND CALLING META phone_number_id={} template='{}' recipient={}",
-                connection.getPhoneNumberId(), request.templateName(), mask(request.recipient()));
+        log.info("SEND CALLING META phone_number_id={} template='{}' recipient={} notification={}",
+                connection.getPhoneNumberId(), request.templateName(), mask(request.recipient()), reserved.getId());
 
         SendResult result = gateway.sendTemplate(connection, request.recipient(), request.templateName(),
                 request.languageCode(), request.bodyParams(), request.buttonUrlParam());
 
         if (result.success()) {
-            NotificationLog sent = notificationLogRepository.save(NotificationLog.sent(principal.tenantId(),
-                    principal.apiKeyId(), request.recipient(), request.templateName(), request.languageCode(),
-                    result.waMessageId()));
-            // INSERT.
+            reserved.markSent(result.waMessageId());
+            NotificationLog sent = notificationLogRepository.save(reserved);
+            // SETTLED.
             log.info("SEND LOGGED notification={} status=SENT wamid={} tenant={} key={} template='{}'",
                     sent.getId(), result.waMessageId(), principal.tenantId(), principal.keyId(),
                     request.templateName());
-            return sent;
+            return SendOutcome.sent(sent);
         }
 
-        NotificationLog failed = notificationLogRepository.save(NotificationLog.failed(principal.tenantId(),
-                principal.apiKeyId(), request.recipient(), request.templateName(), request.languageCode(),
-                result.errorDetail()));
+        reserved.markSendFailed(result.errorDetail());
+        NotificationLog failed = notificationLogRepository.save(reserved);
         // Meta's detail stays here, on our side of the boundary.
         log.warn("SEND LOGGED notification={} status=FAILED tenant={} key={} template='{}' detail={}",
                 failed.getId(), principal.tenantId(), principal.keyId(), request.templateName(), result.errorDetail());
         throw new NotificationDeliveryException(failed.getId());
+    }
+
+    /**
+     * Answers a repeated key from the record instead of sending again.
+     *
+     * <p>A recorded failure is replayed <em>as a failure</em>, the same
+     * status the caller got the first time. The alternative — reporting
+     * success on a replay of something that failed — would have a caller
+     * believe a customer was notified when nobody was. A genuine retry after
+     * a failure is a new attempt and takes a new key.
+     */
+    private SendOutcome replay(NotificationLog prior, ApiKeyPrincipal principal, String key, String cause) {
+        log.warn("IDEMPOTENT REPLAY: {} for tenant {} via key {} matched notification {} (status {}); "
+                        + "no WhatsApp message sent and nothing billed.",
+                cause, principal.tenantId(), principal.keyId(), prior.getId(), prior.getStatus());
+
+        if (prior.getStatus() == NotificationStatus.FAILED) {
+            throw new NotificationDeliveryException(prior.getId());
+        }
+        return SendOutcome.replayed(prior);
+    }
+
+    /**
+     * The key is taken as given, never inferred. The single template in use
+     * carries no parameters, so two requests for different business events
+     * are byte-identical — a key derived from the body could not tell a
+     * retry from a second real notification, and would silently drop the
+     * latter. Only the caller knows; absent the header, there is no
+     * deduplication and that is the correct behaviour.
+     */
+    private static String normaliseKey(String supplied) {
+        if (supplied == null || supplied.isBlank()) {
+            return null;
+        }
+        String trimmed = supplied.trim();
+        return trimmed.length() > 200 ? trimmed.substring(0, 200) : trimmed;
     }
 
     /**
