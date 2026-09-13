@@ -9,3 +9,7 @@ spring:
 logging:
   level:
     com.supportplatform: DEBUG
+  pattern:
+    # See application-prod.yml: prod emits ECS JSON, where MDC is structural.
+    # Locally the same entries have to be named in the pattern to be visible.
+    level: "%5p [req=%X{requestId:-none} cold=%X{coldStart:-?}]"

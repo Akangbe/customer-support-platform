@@ -42,3 +42,18 @@ management:
   endpoint:
     health:
       show-details: never
+
+# Structured (JSON) logging, built into Spring Boot 4 -- no logstash-encoder
+# dependency and no logback-spring.xml needed. Render ships stdout to its log
+# stream as lines; as JSON those lines become queryable instead of needing a
+# regex per question.
+#
+# ECS is chosen over the logstash format because it names the trace field
+# consistently and is what most log backends parse without a custom mapping.
+# MDC entries (requestId, coldStart, sinceReadyS -- see RequestIdFilter) are
+# included automatically, which is the point: every line emitted while
+# handling a request carries the id that ties it to the others.
+logging:
+  structured:
+    format:
+      console: ecs

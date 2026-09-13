@@ -51,6 +51,13 @@ public class NotificationSendService {
     }
 
     public NotificationLog send(ApiKeyPrincipal principal, SendNotificationRequest request) {
+        // ENTRY. The recipient is logged as a masked suffix, not in full: this
+        // line is the one emitted on every request, and a log aggregator full
+        // of complete customer phone numbers is a data-protection problem the
+        // privacy policy would have to answer for.
+        log.info("SEND ENTRY tenant={} key={} template='{}' recipient={}",
+                principal.tenantId(), principal.keyId(), request.templateName(), mask(request.recipient()));
+
         WhatsAppConnection connection = connectionRepository.findByTenantId(principal.tenantId())
                 .orElseThrow(() -> new ResponseStatusException(CONFLICT,
                         "WhatsApp is not connected for this tenant. Connect a number before sending notifications."));
@@ -60,6 +67,14 @@ public class NotificationSendService {
         // must not land in notification_log as a delivery failure.
         requireSendableTemplate(principal.tenantId(), request.templateName());
 
+        // CALL. Deliberately immediately before the Graph API call rather than
+        // after: if the process is killed mid-call (a Render instance being
+        // spun down, say) this is the last line written, and its absence or
+        // presence is what says whether Meta was ever contacted — which is
+        // exactly the question a duplicate investigation turns on.
+        log.info("SEND CALLING META phone_number_id={} template='{}' recipient={}",
+                connection.getPhoneNumberId(), request.templateName(), mask(request.recipient()));
+
         SendResult result = gateway.sendTemplate(connection, request.recipient(), request.templateName(),
                 request.languageCode(), request.bodyParams(), request.buttonUrlParam());
 
@@ -67,8 +82,10 @@ public class NotificationSendService {
             NotificationLog sent = notificationLogRepository.save(NotificationLog.sent(principal.tenantId(),
                     principal.apiKeyId(), request.recipient(), request.templateName(), request.languageCode(),
                     result.waMessageId()));
-            log.info("Notification {} sent for tenant {} via key {} (template '{}')",
-                    sent.getId(), principal.tenantId(), principal.keyId(), request.templateName());
+            // INSERT.
+            log.info("SEND LOGGED notification={} status=SENT wamid={} tenant={} key={} template='{}'",
+                    sent.getId(), result.waMessageId(), principal.tenantId(), principal.keyId(),
+                    request.templateName());
             return sent;
         }
 
@@ -76,9 +93,22 @@ public class NotificationSendService {
                 principal.apiKeyId(), request.recipient(), request.templateName(), request.languageCode(),
                 result.errorDetail()));
         // Meta's detail stays here, on our side of the boundary.
-        log.warn("Notification {} failed for tenant {} via key {} (template '{}'): {}",
+        log.warn("SEND LOGGED notification={} status=FAILED tenant={} key={} template='{}' detail={}",
                 failed.getId(), principal.tenantId(), principal.keyId(), request.templateName(), result.errorDetail());
         throw new NotificationDeliveryException(failed.getId());
+    }
+
+    /**
+     * Keeps enough of a phone number to correlate log lines with each other
+     * and with a {@code notification_log} row, without writing the whole
+     * number into every log sink that ships these lines onward. The full
+     * value is still in the database column, where access is controlled.
+     */
+    private static String mask(String recipient) {
+        if (recipient == null || recipient.length() < 4) {
+            return "****";
+        }
+        return "****" + recipient.substring(recipient.length() - 4);
     }
 
     /**
