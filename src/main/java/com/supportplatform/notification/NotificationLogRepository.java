@@ -76,6 +76,19 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
                                           @Param("from") Instant from,
                                           @Param("to") Instant to);
 
+    /**
+     * Everything this tenant has sent since {@code from} — the running day
+     * total behind the volume thresholds. Counts every status, because a
+     * runaway caller hammering a template Meta keeps refusing is exactly the
+     * case worth being told about.
+     */
+    @Query("""
+            SELECT count(n) FROM NotificationLog n
+             WHERE n.tenantId = :tenantId
+               AND n.createdAt >= :from
+            """)
+    long countSinceForTenant(@Param("tenantId") UUID tenantId, @Param("from") Instant from);
+
     /** One day's totals, as returned by {@link #findDailyUsage}. */
     interface DailyUsageRow {
         LocalDate getDay();

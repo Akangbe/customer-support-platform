@@ -61,14 +61,19 @@ public class ApiKeyService {
      * a database dump.
      */
     @Transactional
-    public IssuedApiKey create(UUID tenantId, UUID actorUserId, UserRole actingRole, String name, Integer rateLimit) {
+    public IssuedApiKey create(UUID tenantId, UUID actorUserId, UserRole actingRole, String name, Integer rateLimit,
+                                 String contactEmail) {
         requireOwnerOrAdmin(actingRole);
 
         String keyId = HexFormat.of().formatHex(randomBytes(KEY_ID_BYTES));
         String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes(SECRET_BYTES));
 
-        ApiKey apiKey = apiKeyRepository.save(new ApiKey(tenantId, keyId, passwordEncoder.encode(secret), name,
-                rateLimit == null ? DEFAULT_RATE_LIMIT : rateLimit));
+        ApiKey key = new ApiKey(tenantId, keyId, passwordEncoder.encode(secret), name,
+                rateLimit == null ? DEFAULT_RATE_LIMIT : rateLimit);
+        // Optional, and never echoed into the audit entry below: the audit
+        // log records that a key was issued, not who to email about it.
+        key.setContactEmail(contactEmail == null || contactEmail.isBlank() ? null : contactEmail.trim());
+        ApiKey apiKey = apiKeyRepository.save(key);
 
         // Never the secret, and never the plaintext key — audit-domain.md §2.
         eventPublisher.publishEvent(new AuditEvent(tenantId, actorUserId, AuditAction.API_KEY_CREATED,
