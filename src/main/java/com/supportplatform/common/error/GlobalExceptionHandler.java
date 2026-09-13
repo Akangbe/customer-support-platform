@@ -10,6 +10,7 @@ import com.supportplatform.user.EmailAlreadyRegisteredException;
 import com.supportplatform.user.InvalidInviteTokenException;
 import com.supportplatform.user.LastOwnerException;
 import com.supportplatform.whatsapp.WhatsAppCodeExchangeException;
+import com.supportplatform.notification.RecipientCeilingExceededException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -72,6 +73,20 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(TooManyLoginAttemptsException.class)
     public ResponseEntity<ErrorResponse> handleTooManyLoginAttempts(TooManyLoginAttemptsException ex, HttpServletRequest request) {
+        ErrorResponse body = new ErrorResponse(Instant.now(), HttpStatus.TOO_MANY_REQUESTS.value(),
+                HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase(), ex.getMessage(), request.getRequestURI(), List.of());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
+                .body(body);
+    }
+
+    /**
+     * Mirrors the login-attempt handler above: 429 with a concrete
+     * {@code Retry-After} the caller can honour, rather than a bare refusal.
+     */
+    @ExceptionHandler(RecipientCeilingExceededException.class)
+    public ResponseEntity<ErrorResponse> handleRecipientCeiling(RecipientCeilingExceededException ex,
+                                                                  HttpServletRequest request) {
         ErrorResponse body = new ErrorResponse(Instant.now(), HttpStatus.TOO_MANY_REQUESTS.value(),
                 HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase(), ex.getMessage(), request.getRequestURI(), List.of());
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
