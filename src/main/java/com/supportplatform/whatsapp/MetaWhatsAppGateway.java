@@ -8,7 +8,9 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -32,6 +34,7 @@ public class MetaWhatsAppGateway implements WhatsAppGateway {
     private static final Set<String> CAPTIONABLE_MEDIA_TYPES = Set.of("image", "video", "document");
 
     private final RestClient restClient;
+    private final ObjectMapper objectMapper;
 
     @Value("${app.whatsapp.graph-api-base-url}")
     private String graphApiBaseUrl;
@@ -42,8 +45,9 @@ public class MetaWhatsAppGateway implements WhatsAppGateway {
     @Value("${app.whatsapp.app-secret}")
     private String appSecret;
 
-    public MetaWhatsAppGateway(RestClient.Builder builder) {
+    public MetaWhatsAppGateway(RestClient.Builder builder, ObjectMapper objectMapper) {
         this.restClient = builder.build();
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -183,9 +187,59 @@ public class MetaWhatsAppGateway implements WhatsAppGateway {
                 return SendResult.failure("WhatsApp response did not contain a message id");
             }
             return SendResult.success(waMessageId);
+        } catch (RestClientResponseException e) {
+            // Meta answered, and said no. Its own error code is the only thing
+            // that distinguishes "retry in a moment" (131049 pacing, 613 rate
+            // limit) from "a human must go and fix billing" (131042) — and
+            // MetaBlockingError already keys the owner alert off exactly these
+            // codes. Logging only e.getMessage() threw that away and left a
+            // truncated string nobody could triage from.
+            String detail = describe(e);
+            log.warn("WhatsApp send REJECTED by Meta for phone_number_id {}: {}", connection.getPhoneNumberId(), detail);
+            return SendResult.failure(detail);
         } catch (RestClientException e) {
-            log.warn("WhatsApp send failed for phone_number_id {}: {}", connection.getPhoneNumberId(), e.getMessage());
-            return SendResult.failure(e.getMessage());
+            // No usable answer: connect timeout, read timeout, DNS, TLS. Worth
+            // separating from the above because the send may well have been
+            // received and acted on by Meta — we simply never heard. Retrying
+            // this case is what duplicates a message.
+            String detail = "No response from Meta (" + e.getClass().getSimpleName() + "): " + e.getMessage();
+            log.warn("WhatsApp send UNANSWERED for phone_number_id {} — delivery is UNKNOWN, not failed: {}",
+                    connection.getPhoneNumberId(), detail);
+            return SendResult.failure(detail);
         }
+    }
+
+    /**
+     * Flattens Meta's error envelope into one triage-ready line. Meta
+     * returns {@code {"error":{"message","type","code","error_subcode",
+     * "fbtrace_id"}}}; {@code fbtrace_id} is what Meta support asks for
+     * first, so it is kept rather than dropped.
+     *
+     * <p>Falls back to the raw body when the shape is unexpected, and caps
+     * its length — an HTML error page from a proxy in front of the Graph API
+     * should not put kilobytes into a log line or a {@code failure_reason}
+     * column.
+     */
+    private String describe(RestClientResponseException e) {
+        String body = e.getResponseBodyAsString();
+        try {
+            JsonNode root = objectMapper.readTree(body);
+            JsonNode error = root.path("error");
+            if (!error.isMissingNode()) {
+                return "HTTP " + e.getStatusCode().value()
+                        + " code=" + error.path("code").asText("?")
+                        + " subcode=" + error.path("error_subcode").asText("-")
+                        + " type=" + error.path("type").asText("?")
+                        + " fbtrace=" + error.path("fbtrace_id").asText("-")
+                        + " message=" + error.path("message").asText("");
+            }
+        } catch (Exception parseFailure) {
+            // fall through to the raw body
+        }
+        String trimmed = body == null ? "" : body.strip();
+        if (trimmed.length() > 500) {
+            trimmed = trimmed.substring(0, 500) + "...[truncated]";
+        }
+        return "HTTP " + e.getStatusCode().value() + " body=" + trimmed;
     }
 }

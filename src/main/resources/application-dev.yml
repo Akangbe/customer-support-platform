@@ -24,3 +24,10 @@ management:
   endpoint:
     health:
       show-details: never
+
+logging:
+  pattern:
+    # %X pulls the MDC entries RequestIdFilter sets. Without this the ids are
+    # recorded and then thrown away at render time, which is the confusing
+    # half-state of "tracing is wired up but I cannot see it".
+    level: "%5p [req=%X{requestId:-none} cold=%X{coldStart:-?}]"
