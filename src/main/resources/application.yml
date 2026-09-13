@@ -19,6 +19,20 @@ app:
     # Turn on together with spring.data.redis.* the moment a second backend
     # instance exists, or each instance grants the full budget separately.
     redis-enabled: ${APP_RATE_LIMIT_REDIS_ENABLED:false}
+  notifications:
+    recipient-ceiling:
+      # How often one customer may be messaged with one template.
+      #
+      # "observe" evaluates the ceiling and logs every breach without
+      # blocking anything; "enforce" rejects with 429 + Retry-After. Ships
+      # as observe on purpose: a throttle turned on against live traffic
+      # before anyone has confirmed what it catches can silence a real
+      # notification, and an unsent notification is a worse failure than a
+      # duplicate one. Grep for "RECIPIENT CEILING (observe" for a couple
+      # of days, confirm it only names the pathological bursts, then flip.
+      mode: ${APP_RECIPIENT_CEILING_MODE:observe}
+      max-per-window: ${APP_RECIPIENT_CEILING_MAX:10}
+      window: ${APP_RECIPIENT_CEILING_WINDOW:PT1H}
   scheduling:
     enabled: ${APP_SCHEDULING_ENABLED:true}
   storage:

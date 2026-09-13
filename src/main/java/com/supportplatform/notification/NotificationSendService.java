@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.springframework.http.HttpStatus.CONFLICT;
@@ -40,14 +41,17 @@ public class NotificationSendService {
     private final NotificationLogRepository notificationLogRepository;
     private final WhatsAppGateway gateway;
     private final WhatsAppTemplateService templateService;
+    private final RecipientCeiling recipientCeiling;
 
     public NotificationSendService(WhatsAppConnectionRepository connectionRepository,
                                      NotificationLogRepository notificationLogRepository,
-                                     WhatsAppGateway gateway, WhatsAppTemplateService templateService) {
+                                     WhatsAppGateway gateway, WhatsAppTemplateService templateService,
+                                     RecipientCeiling recipientCeiling) {
         this.connectionRepository = connectionRepository;
         this.notificationLogRepository = notificationLogRepository;
         this.gateway = gateway;
         this.templateService = templateService;
+        this.recipientCeiling = recipientCeiling;
     }
 
     public NotificationLog send(ApiKeyPrincipal principal, SendNotificationRequest request) {
@@ -66,6 +70,12 @@ public class NotificationSendService {
         // tenant doesn't own is a rejected request, not a failed send, so it
         // must not land in notification_log as a delivery failure.
         requireSendableTemplate(principal.tenantId(), request.templateName());
+
+        // Same reasoning, same placement: a ceiling breach is a rejected
+        // request. It must not write a FAILED row, or every usage figure
+        // derived from notification_log would count messages that were never
+        // sent and never billed.
+        recipientCeiling.check(principal.tenantId(), request.recipient(), request.templateName(), Instant.now());
 
         // CALL. Deliberately immediately before the Graph API call rather than
         // after: if the process is killed mid-call (a Render instance being
