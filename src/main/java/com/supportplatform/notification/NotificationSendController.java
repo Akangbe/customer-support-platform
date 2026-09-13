@@ -2,9 +2,11 @@ package com.supportplatform.notification;
 
 import com.supportplatform.apikey.ApiKeyPrincipal;
 import com.supportplatform.notification.dto.NotificationStatusResponse;
+import com.supportplatform.notification.dto.NotificationUsageResponse;
 import com.supportplatform.notification.dto.SendNotificationRequest;
 import com.supportplatform.notification.dto.SendNotificationResponse;
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 /**
@@ -31,10 +34,13 @@ public class NotificationSendController {
 
     private final NotificationSendService sendService;
     private final NotificationLogService logService;
+    private final NotificationUsageService usageService;
 
-    public NotificationSendController(NotificationSendService sendService, NotificationLogService logService) {
+    public NotificationSendController(NotificationSendService sendService, NotificationLogService logService,
+                                        NotificationUsageService usageService) {
         this.sendService = sendService;
         this.logService = logService;
+        this.usageService = usageService;
     }
 
     /**
@@ -77,6 +83,23 @@ public class NotificationSendController {
     public NotificationStatusResponse getById(@AuthenticationPrincipal ApiKeyPrincipal principal,
                                                 @PathVariable UUID notificationId) {
         return NotificationStatusResponse.from(logService.getWithinTenant(principal.tenantId(), notificationId));
+    }
+
+    /**
+     * What this key has sent. Scoped to the key's own tenant (Rule 3) —
+     * there is no parameter through which a caller could name another —
+     * so an integrator can reconcile its own volume without anyone having
+     * to export a report for it.
+     *
+     * <p>Dates are whole UTC days and both bounds are inclusive. Omitting
+     * them gives the last {@code 30} days.
+     */
+    @GetMapping("/usage")
+    public NotificationUsageResponse usage(
+            @AuthenticationPrincipal ApiKeyPrincipal principal,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return usageService.forApiKey(principal.tenantId(), from, to);
     }
 
     /**

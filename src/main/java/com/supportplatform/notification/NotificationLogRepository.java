@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,6 +21,76 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
 
     /** Backs both the tenant status lookup and the delivery webhook (unique index in V12). */
     Optional<NotificationLog> findByTenantIdAndMetaMessageId(UUID tenantId, String metaMessageId);
+
+    /**
+     * Per-day totals for the usage view. Native because the bucketing is a
+     * Postgres date cast; JPQL has no portable equivalent and inventing one
+     * would be more code than the query.
+     *
+     * <p>Bucketed in UTC rather than the server's zone so the same range
+     * returns the same numbers wherever it is read from, and so a day
+     * boundary means one thing to everyone looking at it.
+     */
+    @Query(value = """
+            SELECT (n.created_at AT TIME ZONE 'UTC')::date AS day,
+                   count(*)                    AS sends,
+                   count(DISTINCT n.recipient) AS recipients
+              FROM notification_log n
+             WHERE n.tenant_id = :tenantId
+               AND n.created_at >= :from
+               AND n.created_at <  :to
+             GROUP BY 1
+             ORDER BY 1
+            """, nativeQuery = true)
+    List<DailyUsageRow> findDailyUsage(@Param("tenantId") UUID tenantId,
+                                         @Param("from") Instant from,
+                                         @Param("to") Instant to);
+
+    /** The status split for the same range — what was delivered, what failed, what is still in flight. */
+    @Query("""
+            SELECT n.status AS status, count(n) AS total
+              FROM NotificationLog n
+             WHERE n.tenantId = :tenantId
+               AND n.createdAt >= :from
+               AND n.createdAt <  :to
+             GROUP BY n.status
+            """)
+    List<StatusCountRow> countByStatusInRange(@Param("tenantId") UUID tenantId,
+                                                @Param("from") Instant from,
+                                                @Param("to") Instant to);
+
+    /**
+     * Distinct recipients across the whole range. Deliberately not the sum
+     * of the daily figures: one customer messaged on three days is three
+     * daily rows but one person, and the difference between "how many
+     * messages" and "how many people" is the entire point of showing both.
+     */
+    @Query("""
+            SELECT count(DISTINCT n.recipient)
+              FROM NotificationLog n
+             WHERE n.tenantId = :tenantId
+               AND n.createdAt >= :from
+               AND n.createdAt <  :to
+            """)
+    long countDistinctRecipientsInRange(@Param("tenantId") UUID tenantId,
+                                          @Param("from") Instant from,
+                                          @Param("to") Instant to);
+
+    /** One day's totals, as returned by {@link #findDailyUsage}. */
+    interface DailyUsageRow {
+        LocalDate getDay();
+
+        long getSends();
+
+        long getRecipients();
+    }
+
+    /** One status and its count, as returned by {@link #countByStatusInRange}. */
+    interface StatusCountRow {
+        NotificationStatus getStatus();
+
+        long getTotal();
+    }
 
     /**
      * The idempotency lookup (unique index in V15). At most one row can
