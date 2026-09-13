@@ -21,6 +21,12 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
     Optional<NotificationLog> findByTenantIdAndMetaMessageId(UUID tenantId, String metaMessageId);
 
     /**
+     * The idempotency lookup (unique index in V15). At most one row can
+     * hold a given key for a tenant, so this is the whole replay decision.
+     */
+    Optional<NotificationLog> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
+
+    /**
      * How many notifications this recipient has already had for this
      * template since {@code windowStart} — the per-recipient velocity
      * ceiling (V14 index).

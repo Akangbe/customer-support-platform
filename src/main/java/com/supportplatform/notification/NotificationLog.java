@@ -65,6 +65,15 @@ public class NotificationLog {
     @Column(name = "failure_reason", columnDefinition = "TEXT")
     private String failureReason;
 
+    /**
+     * What {@code uq_notification_log_tenant_idempotency_key} enforces
+     * (V15). Null for every row written before that migration and for every
+     * caller that does not supply the header — the index is partial so those
+     * coexist freely.
+     */
+    @Column(name = "idempotency_key", length = 200)
+    private String idempotencyKey;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -93,6 +102,33 @@ public class NotificationLog {
                                          String languageCode, String metaMessageId) {
         return new NotificationLog(tenantId, apiKeyId, recipient, templateName, languageCode,
                 NotificationStatus.SENT, metaMessageId, null);
+    }
+
+    /**
+     * The row claimed BEFORE the Graph API call. This is what makes a
+     * concurrent retry collide on the unique index instead of becoming a
+     * second billed message. PENDING because nothing has been sent yet, and
+     * claiming otherwise would be a lie a later status webhook would have to
+     * correct.
+     */
+    public static NotificationLog reserve(UUID tenantId, UUID apiKeyId, String recipient, String templateName,
+                                            String languageCode, String idempotencyKey) {
+        NotificationLog reserved = new NotificationLog(tenantId, apiKeyId, recipient, templateName, languageCode,
+                NotificationStatus.PENDING, null, null);
+        reserved.idempotencyKey = idempotencyKey;
+        return reserved;
+    }
+
+    /** PENDING to SENT, once Meta has accepted the message and named it. */
+    public void markSent(String metaMessageId) {
+        this.status = NotificationStatus.SENT;
+        this.metaMessageId = metaMessageId;
+    }
+
+    /** PENDING to FAILED, when the Graph call itself did not succeed. */
+    public void markSendFailed(String reason) {
+        this.status = NotificationStatus.FAILED;
+        this.failureReason = reason;
     }
 
     public static NotificationLog failed(UUID tenantId, UUID apiKeyId, String recipient, String templateName,
@@ -157,6 +193,10 @@ public class NotificationLog {
 
     public String getMetaMessageId() {
         return metaMessageId;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
     }
 
     public String getFailureReason() {

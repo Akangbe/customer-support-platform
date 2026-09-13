@@ -6,14 +6,15 @@ import com.supportplatform.notification.dto.SendNotificationRequest;
 import com.supportplatform.notification.dto.SendNotificationResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -36,11 +37,30 @@ public class NotificationSendController {
         this.logService = logService;
     }
 
+    /**
+     * {@code Idempotency-Key} is optional, for backward compatibility with
+     * integrations that predate it. Supplying it is strictly better: without
+     * one there is no deduplication at all, and none is inferred — the
+     * template in use carries no parameters, so two requests for different
+     * events are byte-identical and only the caller can say which is which.
+     *
+     * <p>A suppressed retry answers {@code 200 OK} with
+     * {@code X-Idempotent-Replay: true} and the original send's body, rather
+     * than the {@code 202 Accepted} a fresh send gets. The distinct status
+     * matters: a caller retrying because it never saw the first response
+     * needs to tell "we already did this" from "we just did this", and the
+     * body alone cannot say.
+     */
     @PostMapping("/send")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public SendNotificationResponse send(@AuthenticationPrincipal ApiKeyPrincipal principal,
-                                           @Valid @RequestBody SendNotificationRequest request) {
-        return SendNotificationResponse.from(sendService.send(principal, request));
+    public ResponseEntity<SendNotificationResponse> send(
+            @AuthenticationPrincipal ApiKeyPrincipal principal,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody SendNotificationRequest request) {
+        SendOutcome outcome = sendService.send(principal, request, idempotencyKey);
+        return ResponseEntity
+                .status(outcome.replay() ? HttpStatus.OK : HttpStatus.ACCEPTED)
+                .header("X-Idempotent-Replay", Boolean.toString(outcome.replay()))
+                .body(SendNotificationResponse.from(outcome.log()));
     }
 
     /**
