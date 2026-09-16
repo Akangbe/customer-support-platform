@@ -16,12 +16,15 @@ import java.util.UUID;
  * Watches how much a tenant has sent today and raises an event the first
  * time each configured threshold is crossed.
  *
- * <p>Thresholds escalate rather than repeat: 100 is "a busy morning, worth
- * knowing", 500 is "something is wrong", 1000 is "stop and look now". A
- * single threshold would either be too low to mean anything or too high to
- * arrive in time — on 2026-09-11 the day ended at 657 against a baseline
- * of 200-300, so a single alarm set at 1000 would never have fired and one
- * set at 100 would have fired on ordinary days too.
+ * <p>Thresholds step every hundred rather than escalating sparsely. The
+ * sparse ladder (100, 200, 500, 1000) left the middle of a day unmarked:
+ * on 2026-09-11 the day ended at 657 against a baseline of 200-300, so
+ * nothing was logged or mailed between 200 and midnight, and the climb was
+ * only visible afterwards by counting rows. A step per hundred makes the
+ * same climb readable from the log as it happens.
+ *
+ * <p>Only the highest threshold a day has reached is announced, so the cost
+ * is one event per step — not one per send.
  *
  * <p>Counting happens on the send path rather than on a schedule. A
  * scheduled sweep on a service that spins down when idle runs only when
@@ -43,7 +46,7 @@ public class DailyUsageMonitor {
                                NotificationUsageAlertRepository alertRepository,
                                ApplicationEventPublisher events,
                                @Value("${app.notifications.usage-alert.enabled:true}") boolean enabled,
-                               @Value("${app.notifications.usage-alert.thresholds:100,500,1000}")
+                               @Value("${app.notifications.usage-alert.thresholds:100,200,300,400,600,700,800,1000}")
                                List<Integer> thresholds) {
         this.notificationLogRepository = notificationLogRepository;
         this.alertRepository = alertRepository;
