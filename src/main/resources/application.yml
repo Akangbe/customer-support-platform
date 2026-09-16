@@ -35,16 +35,19 @@ app:
       window: ${APP_RECIPIENT_CEILING_WINDOW:PT1H}
     usage-alert:
       # Emails the tenant's Owners and Admins -- and the key's contact, when
-      # one is on file -- the first time a UTC day's sends cross each value.
+      # one is on file -- the first time a UTC day's sends cross each value,
+      # and writes a "NOTIFICATION VOLUME THRESHOLD" warning for each one
+      # whether or not the mail goes out.
       #
-      # Escalating rather than repeating: 100 is "a busy morning, worth
-      # knowing", 500 is "something is wrong", 1000 is "stop and look now".
-      # A single alarm would be either too low to mean anything or too late
-      # to help: 2026-09-11 ended at 657 against a 200-300 baseline, so one
-      # set at 1000 would never have fired and one at 100 would have fired
-      # on ordinary days too. Only the highest value a day reaches is sent.
+      # Every hundred rather than a sparse escalation: the old ladder only
+      # logged at 100, 200, 500 and 1000, so a day that ended at 657 -- as
+      # 2026-09-11 did, against a 200-300 baseline -- left no trace between
+      # 200 and the end of the day. A line per hundred makes the shape of a
+      # climb readable from the log alone. Only the highest value a day has
+      # reached is announced, so this is at most one line and one mail per
+      # step, not one per send.
       enabled: ${APP_USAGE_ALERT_ENABLED:true}
-      thresholds: ${APP_USAGE_ALERT_THRESHOLDS:100,500,1000}
+      thresholds: ${APP_USAGE_ALERT_THRESHOLDS:100,200,300,400,600,700,800,1000}
   scheduling:
     enabled: ${APP_SCHEDULING_ENABLED:true}
   storage:
