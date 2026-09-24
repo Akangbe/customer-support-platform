@@ -128,11 +128,15 @@ happens before the row is durable — a crash right after the `200` loses
 nothing, because the fact of having accepted the event already survived
 to disk.
 
-A `@Scheduled` poller (its own `WebhookProcessingConfig` +
-`@EnableScheduling`, kept off the main application class the same
-reason `JpaAuditingConfig` is separate — so slice tests never
-accidentally pull in a live scheduler) picks up `PENDING` rows on a
-short fixed delay (2s) and processes them:
+`InboundEventProcessor` picks up `PENDING` rows and processes them.
+It has no timer of its own: `WhatsAppWorkScheduler` runs it as soon as
+the controller has stored a delivery, again when a backed-off retry
+falls due, and on a slow backstop sweep (shortly after startup, then
+hourly). Until 2026-09-24 this was a 2-second fixed-delay poll; that
+query kept Neon's compute from ever suspending while the app was up and
+exhausted the month's free quota, which took production down. The
+scheduler is gated by `app.scheduling.enabled` (`SchedulingConfig`), so
+integration tests call the processor directly instead:
 
 ```
 for each entry in payload.entries:
@@ -195,7 +199,9 @@ Meta's JSON response into `SendResult` (`waMessageId` on success, an
 error detail on failure). No other module ever sees that JSON shape.
 
 **Outbound sender** — the actual outbox consumer ADR-012 promised in
-Phase 5, now built: a second `@Scheduled` poller selects `Message` rows
+Phase 5, now built: `OutboundMessageSender`, run by `WhatsAppWorkScheduler`
+when `MessageService` queues a message (plus retries and the sweep, as
+above), selects `Message` rows
 where `direction = OUTBOUND AND status = PENDING AND (next_attempt_at
 IS NULL OR next_attempt_at <= now)`, resolves the conversation → customer
 → phone and the tenant's `WhatsAppConnection`, and calls `sendText`
