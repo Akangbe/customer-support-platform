@@ -121,6 +121,7 @@ public class MessageService {
         }
 
         publishEvent(tenantId, conversationId, message.getId());
+        eventPublisher.publishEvent(new OutboundMessageQueued(tenantId, message.getId()));
         return message;
     }
 

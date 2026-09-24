@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,13 +33,16 @@ public class WhatsAppWebhookController {
 
     private final WebhookSignatureVerifier signatureVerifier;
     private final WebhookEventRepository webhookEventRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${app.whatsapp.verify-token}")
     private String verifyToken;
 
-    public WhatsAppWebhookController(WebhookSignatureVerifier signatureVerifier, WebhookEventRepository webhookEventRepository) {
+    public WhatsAppWebhookController(WebhookSignatureVerifier signatureVerifier, WebhookEventRepository webhookEventRepository,
+                                      ApplicationEventPublisher eventPublisher) {
         this.signatureVerifier = signatureVerifier;
         this.webhookEventRepository = webhookEventRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     /** Meta's registration handshake. */
@@ -65,6 +69,9 @@ public class WhatsAppWebhookController {
         }
 
         webhookEventRepository.save(WebhookEvent.received(new String(rawBody, StandardCharsets.UTF_8)));
+        // After the save has committed (this method has no transaction, so
+        // save() is its own): the processor must find the row when it looks.
+        eventPublisher.publishEvent(new WebhookEventReceived());
         return ResponseEntity.ok().build();
     }
 }

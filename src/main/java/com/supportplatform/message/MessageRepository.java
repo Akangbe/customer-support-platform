@@ -30,4 +30,13 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             ORDER BY m.createdAt
             """)
     List<Message> findSendable(@Param("now") Instant now, Pageable pageable);
+
+    /** The earliest backed-off outbound retry still in the future — what the next wake-up is timed to. */
+    @Query("""
+            SELECT min(m.nextAttemptAt) FROM Message m
+            WHERE m.direction = com.supportplatform.message.MessageDirection.OUTBOUND
+              AND m.status = com.supportplatform.message.MessageStatus.PENDING
+              AND m.nextAttemptAt > :now
+            """)
+    Optional<Instant> findNextRetryAt(@Param("now") Instant now);
 }

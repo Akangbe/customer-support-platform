@@ -13,6 +13,14 @@ app:
     # and tenant integration testing. Deliberately absent from
     # application-prod.yml so production can't land here by accident.
     mock: ${WHATSAPP_MOCK:false}
+    work:
+      # Inbound webhooks and queued agent messages are processed as they
+      # arrive (WhatsAppWorkScheduler); these only time the backstop sweep.
+      # The sweep is the only database traffic an idle app makes, so it is
+      # deliberately slow: Neon suspends after ~5 idle minutes and bills
+      # while awake, and the old 2-second pollers kept it awake all month.
+      startup-sweep-delay-ms: ${APP_WHATSAPP_STARTUP_SWEEP_DELAY_MS:10000}
+      sweep-interval-ms: ${APP_WHATSAPP_SWEEP_INTERVAL_MS:3600000}
   rate-limit:
     # false = process-local counters (InMemoryRateLimiter), which is correct
     # for the single instance ADR-018 assumes and needs no Redis running.
@@ -106,6 +114,14 @@ spring:
           time_zone: UTC
   flyway:
     enabled: true
+  datasource:
+    hikari:
+      # Let the pool empty when the app is idle. Hikari otherwise holds its
+      # minimum of open connections forever, and an open connection is a
+      # reason for Neon not to suspend. A connection is reopened on demand;
+      # the cost is one handshake on the first query after a quiet minute.
+      minimum-idle: 0
+      idle-timeout: 60000
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -128,3 +144,9 @@ management:
     # nothing is using.
     redis:
       enabled: ${APP_RATE_LIMIT_REDIS_ENABLED:false}
+    # Render calls the health check continually, and the default database
+    # indicator runs a query on every call -- by itself enough to keep Neon
+    # from ever suspending. A database outage still shows up: the app cannot
+    # start without Flyway reaching it, and every request fails loudly.
+    db:
+      enabled: false
