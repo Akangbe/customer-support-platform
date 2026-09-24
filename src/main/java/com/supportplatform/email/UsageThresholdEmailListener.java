@@ -1,14 +1,8 @@
 package com.supportplatform.email;
 
-import com.supportplatform.apikey.ApiKey;
-import com.supportplatform.apikey.ApiKeyRepository;
 import com.supportplatform.notification.DailyUsageThresholdEvent;
 import com.supportplatform.notification.NotificationUsageAlert;
 import com.supportplatform.notification.NotificationUsageAlertRepository;
-import com.supportplatform.user.User;
-import com.supportplatform.user.UserRepository;
-import com.supportplatform.user.UserRole;
-import com.supportplatform.user.UserStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -16,11 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.UUID;
 
 /**
  * Emails a tenant's Owners and Admins — and the integrator behind the key,
@@ -44,19 +34,14 @@ public class UsageThresholdEmailListener {
 
     private static final Logger log = LoggerFactory.getLogger(UsageThresholdEmailListener.class);
 
-    private static final Set<UserRole> ALERTABLE_ROLES = Set.of(UserRole.OWNER, UserRole.ADMIN);
-
     private final EmailGateway emailGateway;
-    private final UserRepository userRepository;
-    private final ApiKeyRepository apiKeyRepository;
+    private final ApiKeyAlertRecipients alertRecipients;
     private final NotificationUsageAlertRepository alertRepository;
 
-    public UsageThresholdEmailListener(EmailGateway emailGateway, UserRepository userRepository,
-                                         ApiKeyRepository apiKeyRepository,
+    public UsageThresholdEmailListener(EmailGateway emailGateway, ApiKeyAlertRecipients alertRecipients,
                                          NotificationUsageAlertRepository alertRepository) {
         this.emailGateway = emailGateway;
-        this.userRepository = userRepository;
-        this.apiKeyRepository = apiKeyRepository;
+        this.alertRecipients = alertRecipients;
         this.alertRepository = alertRepository;
     }
 
@@ -101,7 +86,7 @@ public class UsageThresholdEmailListener {
     }
 
     private void notify(DailyUsageThresholdEvent event) {
-        List<String> recipients = addressees(event);
+        List<String> recipients = alertRecipients.forKey(event.tenantId(), event.apiKeyId());
         if (recipients.isEmpty()) {
             log.warn("No one to email about the volume threshold crossed by tenant {}", event.tenantId());
             return;
@@ -125,36 +110,5 @@ public class UsageThresholdEmailListener {
         for (String recipient : recipients) {
             emailGateway.send(recipient, subject, html, text);
         }
-    }
-
-    /**
-     * The tenant's own Owners and Admins, plus the key's contact if one was
-     * recorded. A {@link LinkedHashSet} because an integrator who is also a
-     * user of the tenant should get one mail, not two, and because the
-     * tenant's own people should be first in the list.
-     */
-    private List<String> addressees(DailyUsageThresholdEvent event) {
-        Set<String> unique = new LinkedHashSet<>();
-
-        for (User user : userRepository.findAllByTenantIdAndRoleInAndStatus(
-                event.tenantId(), ALERTABLE_ROLES, UserStatus.ACTIVE)) {
-            unique.add(user.getEmail());
-        }
-
-        contactEmail(event.apiKeyId(), event.tenantId()).ifPresent(unique::add);
-
-        return new ArrayList<>(unique);
-    }
-
-    private java.util.Optional<String> contactEmail(UUID apiKeyId, UUID tenantId) {
-        if (apiKeyId == null) {
-            return java.util.Optional.empty();
-        }
-        return apiKeyRepository.findById(apiKeyId)
-                // Tenant-scoped even on a lookup by primary key (Rule 3): an
-                // id that belongs to another tenant must not resolve here.
-                .filter(key -> key.getTenantId().equals(tenantId))
-                .map(ApiKey::getContactEmail)
-                .filter(email -> email != null && !email.isBlank());
     }
 }
