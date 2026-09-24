@@ -48,6 +48,28 @@ app:
       # step, not one per send.
       enabled: ${APP_USAGE_ALERT_ENABLED:true}
       thresholds: ${APP_USAGE_ALERT_THRESHOLDS:100,200,300,400,600,700,800,1000}
+    daily-summary:
+      # Mails each key's contact, and the tenant's Owners and Admins, the
+      # previous UTC day's sends and estimated cost -- on that key's first
+      # send of the new day. Trustpady were repeatedly surprised by the
+      # accumulated fee; a figure every morning keeps the total in view.
+      #
+      # The price is Meta's "cost per message delivered" from WhatsApp
+      # Manager. It is an average that moves, so check it there and update
+      # this when it does; each summary stores the rate it was priced at.
+      # "Cost per website button click" on the same screen is the same spend
+      # divided by clicks, not a second charge, so it is not added here.
+      enabled: ${APP_DAILY_SUMMARY_ENABLED:true}
+      price-per-delivered: ${APP_DAILY_SUMMARY_PRICE_PER_DELIVERED:0.01}
+      currency: ${APP_DAILY_SUMMARY_CURRENCY:AUD}
+      # How far back an unsummarized day is still caught up, for a key that
+      # went quiet for a while and has just started sending again.
+      lookback-days: ${APP_DAILY_SUMMARY_LOOKBACK_DAYS:7}
+      # "owners" mails the tenant's Owners and Admins only; "all" adds the
+      # key's contact. Ships as owners on purpose, like the recipient
+      # ceiling's observe mode: read a few real summaries, then flip. Days
+      # already summarized are not re-sent, so flipping sends no backlog.
+      recipients: ${APP_DAILY_SUMMARY_RECIPIENTS:owners}
   scheduling:
     enabled: ${APP_SCHEDULING_ENABLED:true}
   storage:

@@ -89,6 +89,43 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
             """)
     long countSinceForTenant(@Param("tenantId") UUID tenantId, @Param("from") Instant from);
 
+    /**
+     * One key's per-day outcome split, behind the daily spend summary.
+     * Scoped by key as well as tenant: a tenant can carry several
+     * integrators' keys, and each is told only about its own traffic.
+     *
+     * <p>DELIVERED and READ are counted together because a read message was
+     * necessarily delivered, and delivery is what Meta charges for.
+     */
+    @Query(value = """
+            SELECT (n.created_at AT TIME ZONE 'UTC')::date                         AS day,
+                   count(*)                                                      AS sends,
+                   count(*) FILTER (WHERE n.status IN ('DELIVERED', 'READ'))     AS delivered,
+                   count(*) FILTER (WHERE n.status = 'FAILED')                   AS failed
+              FROM notification_log n
+             WHERE n.tenant_id  = :tenantId
+               AND n.api_key_id = :apiKeyId
+               AND n.created_at >= :from
+               AND n.created_at <  :to
+             GROUP BY 1
+             ORDER BY 1
+            """, nativeQuery = true)
+    List<DailyOutcomeRow> findDailyOutcomesForKey(@Param("tenantId") UUID tenantId,
+                                                    @Param("apiKeyId") UUID apiKeyId,
+                                                    @Param("from") Instant from,
+                                                    @Param("to") Instant to);
+
+    /** One day's outcomes for one key, as returned by {@link #findDailyOutcomesForKey}. */
+    interface DailyOutcomeRow {
+        LocalDate getDay();
+
+        long getSends();
+
+        long getDelivered();
+
+        long getFailed();
+    }
+
     /** One day's totals, as returned by {@link #findDailyUsage}. */
     interface DailyUsageRow {
         LocalDate getDay();
