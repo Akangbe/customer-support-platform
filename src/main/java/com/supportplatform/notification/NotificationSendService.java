@@ -55,12 +55,14 @@ public class NotificationSendService {
     private final RecipientCeiling recipientCeiling;
     private final DailyUsageMonitor dailyUsageMonitor;
     private final DailySpendSummarizer dailySpendSummarizer;
+    private final RecipientNumberCheck recipientNumberCheck;
 
     public NotificationSendService(WhatsAppConnectionRepository connectionRepository,
                                      NotificationLogRepository notificationLogRepository,
                                      WhatsAppGateway gateway, WhatsAppTemplateService templateService,
                                      RecipientCeiling recipientCeiling, DailyUsageMonitor dailyUsageMonitor,
-                                     DailySpendSummarizer dailySpendSummarizer) {
+                                     DailySpendSummarizer dailySpendSummarizer,
+                                     RecipientNumberCheck recipientNumberCheck) {
         this.connectionRepository = connectionRepository;
         this.notificationLogRepository = notificationLogRepository;
         this.gateway = gateway;
@@ -68,6 +70,7 @@ public class NotificationSendService {
         this.recipientCeiling = recipientCeiling;
         this.dailyUsageMonitor = dailyUsageMonitor;
         this.dailySpendSummarizer = dailySpendSummarizer;
+        this.recipientNumberCheck = recipientNumberCheck;
     }
 
     public SendOutcome send(ApiKeyPrincipal principal, SendNotificationRequest request, String idempotencyKey) {
@@ -92,6 +95,11 @@ public class NotificationSendService {
         // derived from notification_log would count messages that were never
         // sent and never billed.
         recipientCeiling.check(principal.tenantId(), request.recipient(), request.templateName(), Instant.now());
+
+        // Also a rejected request, not a failed send, and placed with the
+        // ceiling for the same reason. A number that cannot exist would
+        // otherwise be accepted here and fail at Meta with 131026 every day.
+        recipientNumberCheck.check(principal.tenantId(), request.recipient(), request.templateName());
 
         String key = normaliseKey(idempotencyKey);
         if (key != null) {

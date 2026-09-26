@@ -10,6 +10,7 @@ import com.supportplatform.user.EmailAlreadyRegisteredException;
 import com.supportplatform.user.InvalidInviteTokenException;
 import com.supportplatform.user.LastOwnerException;
 import com.supportplatform.whatsapp.WhatsAppCodeExchangeException;
+import com.supportplatform.notification.InvalidRecipientNumberException;
 import com.supportplatform.notification.RecipientCeilingExceededException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -146,6 +147,13 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(TemplateNotAllowedException.class)
     public ResponseEntity<ErrorResponse> handleTemplateNotAllowed(TemplateNotAllowedException ex, HttpServletRequest request) {
+        return build(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request, List.of());
+    }
+
+    /** Well-formed, but not a number that exists: the request is understood and cannot be carried out. */
+    @ExceptionHandler(InvalidRecipientNumberException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidRecipientNumber(InvalidRecipientNumberException ex,
+                                                                        HttpServletRequest request) {
         return build(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request, List.of());
     }
 

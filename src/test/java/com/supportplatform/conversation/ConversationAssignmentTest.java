@@ -13,7 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** Covers ADR-017: self-claim for anyone, privileged reassignment for Owner/Admin/Manager. */
-class ConversationAssignmentTest extends AbstractIntegrationTest {
+class   ConversationAssignmentTest extends AbstractIntegrationTest {
 
     @Test
     void anyoneCanClaimAnUnassignedConversation() throws Exception {

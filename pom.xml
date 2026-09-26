@@ -83,6 +83,14 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
+        <!-- Per-country number validation for notification recipients: the
+             E.164 regex accepts any 7-15 digits, so a Nigerian number with two
+             digits too many passed it and failed at Meta every day instead. -->
+        <dependency>
+            <groupId>com.googlecode.libphonenumber</groupId>
+            <artifactId>libphonenumber</artifactId>
+            <version>9.0.40</version>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

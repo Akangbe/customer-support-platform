@@ -41,6 +41,17 @@ app:
       mode: ${APP_RECIPIENT_CEILING_MODE:observe}
       max-per-window: ${APP_RECIPIENT_CEILING_MAX:10}
       window: ${APP_RECIPIENT_CEILING_WINDOW:PT1H}
+    recipient-validation:
+      # Checks each recipient against its country's numbering plan
+      # (libphonenumber) -- the E.164 pattern alone accepts any 7-15 digits,
+      # which let a Nigerian number with two extra digits fail at Meta every
+      # day. "observe" logs what it would reject and blocks nothing;
+      # "enforce" answers 422. Ships as observe because the library's
+      # metadata can lag a country opening a new range, and enforcing that
+      # would turn away a real customer. Grep for "RECIPIENT NUMBER INVALID
+      # (observe" for a few days, confirm it names only real mistakes, then
+      # flip -- and keep the libphonenumber version current once enforcing.
+      mode: ${APP_RECIPIENT_VALIDATION_MODE:observe}
     usage-alert:
       # Emails the tenant's Owners and Admins -- and the key's contact, when
       # one is on file -- the first time a UTC day's sends cross each value,
@@ -55,7 +66,7 @@ app:
       # reached is announced, so this is at most one line and one mail per
       # step, not one per send.
       enabled: ${APP_USAGE_ALERT_ENABLED:true}
-      thresholds: ${APP_USAGE_ALERT_THRESHOLDS:100,200,300,400,600,700,800,1000}
+      thresholds: ${APP_USAGE_ALERT_THRESHOLDS:100,200,300,400,600,700,800,900, 1000}
     daily-summary:
       # Mails each key's contact, and the tenant's Owners and Admins, the
       # previous UTC day's sends and estimated cost -- on that key's first
