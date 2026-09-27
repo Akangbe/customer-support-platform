@@ -1,6 +1,5 @@
 package com.supportplatform.apikey.dto;
 
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -19,8 +18,10 @@ public record CreateApiKeyRequest(
          * tenant's own backend has no third party behind it — but when a key
          * is issued to a partner, this is what lets a volume alert reach them
          * the same morning it reaches the tenant, rather than by forwarded
-         * email.
+         * email. One address or several separated by commas; each is
+         * checked in {@code ApiKeyService}, which is also where "" is read as
+         * "none", so there is no {@code @Email} here to reject a list.
          */
-        @Email @Size(max = 320) String contactEmail
+        @Size(max = 320) String contactEmail
 ) {
 }

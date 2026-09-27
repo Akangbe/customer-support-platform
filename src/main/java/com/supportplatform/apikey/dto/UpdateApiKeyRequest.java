@@ -11,8 +11,8 @@ import jakarta.validation.constraints.Size;
  * the last has its own activate/deactivate verbs precisely so an operator
  * has to say which direction they meant.
  *
- * @param contactEmail an address to set, or {@code ""} to remove the one on
- *                     file. Removing has to be expressible: a partner whose
+ * @param contactEmail an address, or several separated by commas, to set;
+ *                     or {@code ""} to remove what is on file. Removing has to be expressible: a partner whose
  *                     ops contact leaves should not keep receiving a
  *                     tenant's volume alerts, and "send me null" is not
  *                     something a JSON body can say distinctly from "I did

@@ -17,7 +17,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -37,6 +39,15 @@ public class ApiKeyService {
     /** {@code rd_live_{keyId}.{secret}} — the prefix makes a leaked key greppable in logs and secret scanners. */
     static final String KEY_PREFIX = "rd_live_";
     static final String SECRET_SEPARATOR = ".";
+    private static final String CONTACT_EMAIL_RULE = "contactEmail must be one or more valid email addresses "
+            + "separated by commas, or \"\" to remove the ones on file.";
+
+    /** A handful is a contact list; more than that is a mailing list, which belongs in the partner's own mail system. */
+    private static final int MAX_CONTACTS = 5;
+
+    /** The column's width (V16): 320 characters, one full-length address or several ordinary ones. */
+    private static final int MAX_CONTACTS_LENGTH = 320;
+
     private static final int DEFAULT_RATE_LIMIT = 60;
     private static final int KEY_ID_BYTES = 8;
     private static final int SECRET_BYTES = 32;
@@ -74,7 +85,7 @@ public class ApiKeyService {
                 rateLimit == null ? DEFAULT_RATE_LIMIT : rateLimit);
         // Optional, and never echoed into the audit entry below: the audit
         // log records that a key was issued, not who to email about it.
-        key.setContactEmail(contactEmail == null || contactEmail.isBlank() ? null : contactEmail.trim());
+        key.setContactEmail(contactEmail == null || contactEmail.isBlank() ? null : normaliseContacts(contactEmail));
         ApiKey apiKey = apiKeyRepository.save(key);
 
         // Never the secret, and never the plaintext key — audit-domain.md §2.
@@ -122,7 +133,7 @@ public class ApiKeyService {
             if (trimmed.isEmpty()) {
                 apiKey.setContactEmail(null);
             } else {
-                apiKey.setContactEmail(requireEmailShaped(trimmed));
+                apiKey.setContactEmail(normaliseContacts(trimmed));
             }
             changed.add("contactEmail");
         }
@@ -148,11 +159,43 @@ public class ApiKeyService {
     }
 
     /**
-     * Validated here rather than with {@code @Email} on the DTO, because the
-     * field also has to accept {@code ""} as "clear" and a bean-validation
-     * annotation cannot express "a real address, or nothing at all" without
-     * making the empty case ambiguous.
+     * One address, or several separated by commas: a partner often wants
+     * both a shared inbox and a named person told (Trustpady, 2026-09-27).
+     * Kept in the one column rather than a table of its own, so the API's
+     * shape did not change for anyone already sending a single address.
+     *
+     * <p>Every address is checked on its own and duplicates are dropped,
+     * because a single malformed or repeated entry would otherwise reach SES
+     * as one bad recipient and take the good ones down with it. Stored as
+     * {@code "a@x.com, b@y.com"}, which is also exactly what the API returns.
+     *
+     * <p>Validated here rather than with {@code @Email} on the DTO, because the
+     * field also has to accept {@code ""} as "clear" and a list, and a
+     * bean-validation annotation can express neither.
      */
+    static String normaliseContacts(String raw) {
+        LinkedHashMap<String, String> unique = new LinkedHashMap<>();
+        for (String part : raw.split("[,;]")) {
+            String address = part.trim();
+            if (!address.isEmpty()) {
+                unique.putIfAbsent(address.toLowerCase(Locale.ROOT), requireEmailShaped(address));
+            }
+        }
+        if (unique.isEmpty()) {
+            throw new ResponseStatusException(BAD_REQUEST, CONTACT_EMAIL_RULE);
+        }
+        if (unique.size() > MAX_CONTACTS) {
+            throw new ResponseStatusException(BAD_REQUEST,
+                    "contactEmail can hold at most " + MAX_CONTACTS + " addresses.");
+        }
+        String joined = String.join(", ", unique.values());
+        if (joined.length() > MAX_CONTACTS_LENGTH) {
+            throw new ResponseStatusException(BAD_REQUEST,
+                    "contactEmail is too long; it can hold at most " + MAX_CONTACTS_LENGTH + " characters in total.");
+        }
+        return joined;
+    }
+
     private static String requireEmailShaped(String candidate) {
         int at = candidate.indexOf('@');
         boolean shaped = at > 0
@@ -161,8 +204,7 @@ public class ApiKeyService {
                 && candidate.indexOf('.', at) > at + 1
                 && candidate.chars().noneMatch(Character::isWhitespace);
         if (!shaped) {
-            throw new ResponseStatusException(BAD_REQUEST,
-                    "contactEmail must be a valid email address, or \"\" to remove the one on file.");
+            throw new ResponseStatusException(BAD_REQUEST, CONTACT_EMAIL_RULE);
         }
         return candidate;
     }
