@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -54,6 +55,9 @@ class DailyUsageAlertTest extends AbstractApiKeyIntegrationTest {
     @Autowired
     private NotificationUsageAlertRepository alertRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @Test
     void crossingAThresholdAlertsTheOwnerExactlyOnce() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Alert Co 1", "Alert Owner 1",
@@ -90,7 +94,7 @@ class DailyUsageAlertTest extends AbstractApiKeyIntegrationTest {
         // process would have. Suppression must survive a restart, which an
         // in-memory cooldown would not: this service cold starts several
         // times a day and would otherwise re-announce on every wake.
-        alertRepository.save(new NotificationUsageAlert(tenantId, LocalDate.now(ZoneOffset.UTC), 3, 3));
+        alertRepository.save(new NotificationUsageAlert(tenantId, apiKeyIdOf(tenantId), LocalDate.now(ZoneOffset.UTC), 3, 3));
 
         for (int i = 0; i < 4; i++) {
             send(key, "+1415555991" + i);
@@ -139,6 +143,51 @@ class DailyUsageAlertTest extends AbstractApiKeyIntegrationTest {
     }
 
     @Test
+    void eachKeyIsCountedOnItsOwn() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Alert Co 6", "Alert Owner 6",
+                "alert-owner-6@example.com", "password123");
+        UUID tenantId = extractTenantId(owner);
+        String trustpady = setUpSending(owner, "alert-pn-6", "integrator@partner.example");
+        String other = issueApiKey(owner, "Another client");
+
+        // Two sends each: four for the tenant, past the threshold of 3, but
+        // no single key has reached it. A tenant-wide count would have told
+        // Trustpady about the other client's traffic.
+        for (int i = 0; i < 2; i++) {
+            send(trustpady, "+141555599" + (40 + i));
+            send(other, "+141555599" + (50 + i));
+        }
+
+        verifyNoInteractions(emailGateway);
+        assertThat(alertRepository.findAll().stream().filter(a -> a.getTenantId().equals(tenantId))).isEmpty();
+
+        send(trustpady, "+14155559942");
+
+        // Now Trustpady's own key has reached 3, and the mail names it.
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(emailGateway, atLeastOnce()).send(anyString(), anyString(), anyString(), text.capture());
+        assertThat(text.getValue()).startsWith("The API key Trustpady production has sent 3 WhatsApp notifications");
+    }
+
+    @Test
+    void aLegacyTenantWideRowStillCountsAsAlertedForItsDay() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Alert Co 7", "Alert Owner 7",
+                "alert-owner-7@example.com", "password123");
+        UUID tenantId = extractTenantId(owner);
+        String key = setUpSending(owner, "alert-pn-7", null);
+
+        // A row as V16 wrote it, before alerts were per key: no key at all.
+        // The day V19 ships must not announce that threshold a second time.
+        alertRepository.save(new NotificationUsageAlert(tenantId, null, LocalDate.now(ZoneOffset.UTC), 3, 3));
+
+        for (int i = 0; i < 4; i++) {
+            send(key, "+141555599" + (60 + i));
+        }
+
+        verifyNoInteractions(emailGateway);
+    }
+
+    @Test
     void anUnreachableMailboxNeverFailsTheSend() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Alert Co 5", "Alert Owner 5",
                 "alert-owner-5@example.com", "password123");
@@ -152,6 +201,11 @@ class DailyUsageAlertTest extends AbstractApiKeyIntegrationTest {
         for (int i = 0; i < 4; i++) {
             send(key, "+141555599" + (30 + i));
         }
+    }
+
+    /** The one key this test's tenant has sent with, read back from its own rows. */
+    private UUID apiKeyIdOf(UUID tenantId) {
+        return jdbcTemplate.queryForObject("SELECT id FROM api_key WHERE tenant_id = ?", UUID.class, tenantId);
     }
 
     private String setUpSending(MockHttpSession owner, String phoneNumberId, String contactEmail) throws Exception {

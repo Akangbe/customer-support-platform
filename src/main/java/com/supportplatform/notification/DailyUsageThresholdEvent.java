@@ -4,7 +4,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 /**
- * One tenant has sent enough notifications today to cross a configured
+ * One API key has sent enough notifications today to cross a configured
  * threshold.
  *
  * <p>Carries {@code apiKeyId} so the alert can also reach whoever is

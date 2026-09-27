@@ -84,11 +84,12 @@ app:
       # How far back an unsummarized day is still caught up, for a key that
       # went quiet for a while and has just started sending again.
       lookback-days: ${APP_DAILY_SUMMARY_LOOKBACK_DAYS:7}
-      # "owners" mails the tenant's Owners and Admins only; "all" adds the
-      # key's contact. Ships as owners on purpose, like the recipient
-      # ceiling's observe mode: read a few real summaries, then flip. Days
-      # already summarized are not re-sent, so flipping sends no backlog.
-      recipients: ${APP_DAILY_SUMMARY_RECIPIENTS:owners}
+      # "all" mails the key's contact as well as the tenant's Owners and
+      # Admins; "owners" holds the summary back from the integrator. Shipped
+      # as owners while the operator read real summaries, switched to all on
+      # 2026-09-26 when Trustpady's contact was added. Days summarized under
+      # owners were not re-sent, so switching delivered no backlog.
+      recipients: ${APP_DAILY_SUMMARY_RECIPIENTS:all}
   scheduling:
     enabled: ${APP_SCHEDULING_ENABLED:true}
   storage:

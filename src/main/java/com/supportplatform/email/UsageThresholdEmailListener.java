@@ -9,6 +9,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.web.util.HtmlUtils;
 
 import java.util.List;
 
@@ -59,8 +60,8 @@ public class UsageThresholdEmailListener {
 
         // Written first and unconditionally: this is what a log-based alarm
         // watches, and it survives SES being unconfigured.
-        log.warn("NOTIFICATION VOLUME THRESHOLD: tenant {} has sent {} notifications on {} (UTC), crossing {}.",
-                event.tenantId(), event.sendsToday(), event.periodStart(), event.threshold());
+        log.warn("NOTIFICATION VOLUME THRESHOLD: key {} in tenant {} has sent {} notifications on {} (UTC), crossing {}.",
+                event.apiKeyId(), event.tenantId(), event.sendsToday(), event.periodStart(), event.threshold());
 
         try {
             notify(event);
@@ -77,7 +78,7 @@ public class UsageThresholdEmailListener {
      */
     private boolean claim(DailyUsageThresholdEvent event) {
         try {
-            alertRepository.save(new NotificationUsageAlert(event.tenantId(), event.periodStart(),
+            alertRepository.save(new NotificationUsageAlert(event.tenantId(), event.apiKeyId(), event.periodStart(),
                     event.threshold(), (int) Math.min(event.sendsToday(), Integer.MAX_VALUE)));
             return true;
         } catch (DataIntegrityViolationException alreadyAlerted) {
@@ -92,14 +93,16 @@ public class UsageThresholdEmailListener {
             return;
         }
 
+        String keyName = alertRecipients.keyName(event.tenantId(), event.apiKeyId()).orElse("your API key");
         String subject = "WhatsApp notifications: " + event.sendsToday() + " sent today";
-        String text = "This account has sent " + event.sendsToday() + " WhatsApp notifications on "
+        String text = "The API key " + keyName + " has sent " + event.sendsToday() + " WhatsApp notifications on "
                 + event.periodStart() + " (UTC), passing the alert threshold of " + event.threshold() + ".\n\n"
                 + "If that is expected, nothing needs doing. If it is not, the usual cause is a caller "
                 + "re-sending the same notification, and the fastest check is whether the number of messages "
                 + "is far above the number of people who received them.\n\n"
                 + "An API key can be switched off immediately from the dashboard without deleting it.";
-        String html = "<p>This account has sent <strong>" + event.sendsToday() + "</strong> WhatsApp notifications on "
+        String html = "<p>The API key <strong>" + HtmlUtils.htmlEscape(keyName) + "</strong> has sent <strong>"
+                + event.sendsToday() + "</strong> WhatsApp notifications on "
                 + event.periodStart() + " (UTC), passing the alert threshold of <strong>" + event.threshold()
                 + "</strong>.</p>"
                 + "<p>If that is expected, nothing needs doing. If it is not, the usual cause is a caller "

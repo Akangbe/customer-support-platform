@@ -24,11 +24,11 @@ import java.util.List;
  * the claim, the log line is written unconditionally, and a mail failure is
  * swallowed to a warning so it can never fail the send that triggered it.
  *
- * <p>Ships reaching the tenant's Owners and Admins only, the way the
- * recipient ceiling shipped in observe mode: the operator reads a few real
- * summaries before the integrator is added. A day summarized in that mode
- * is not summarized again once the contact is added, so switching over
- * never delivers a backlog.
+ * <p>{@code recipients=owners} holds the summary back from the key's
+ * contact and mails only the tenant's Owners and Admins, which is how it
+ * first shipped while the operator checked real summaries. A day
+ * summarized in that mode is not summarized again once the contact is
+ * added, so switching over never delivers a backlog.
  */
 @Component
 public class DailySpendSummaryEmailListener {
@@ -42,7 +42,7 @@ public class DailySpendSummaryEmailListener {
 
     public DailySpendSummaryEmailListener(EmailGateway emailGateway, ApiKeyAlertRecipients alertRecipients,
                                             NotificationDailySummaryRepository summaryRepository,
-                                            @Value("${app.notifications.daily-summary.recipients:owners}")
+                                            @Value("${app.notifications.daily-summary.recipients:all}")
                                             String recipients) {
         this.emailGateway = emailGateway;
         this.alertRecipients = alertRecipients;

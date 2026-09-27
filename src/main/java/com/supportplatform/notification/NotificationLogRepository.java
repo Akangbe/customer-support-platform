@@ -77,17 +77,24 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
                                           @Param("to") Instant to);
 
     /**
-     * Everything this tenant has sent since {@code from} — the running day
+     * Everything this key has sent since {@code from} — the running day
      * total behind the volume thresholds. Counts every status, because a
      * runaway caller hammering a template Meta keeps refusing is exactly the
      * case worth being told about.
+     *
+     * <p>Per key rather than per tenant (V19): the mail goes to that key's
+     * integrator, and a tenant can carry several integrators' keys.
+     * Tenant-scoped as well, so a key id can never count rows outside its
+     * own tenant.
      */
     @Query("""
             SELECT count(n) FROM NotificationLog n
              WHERE n.tenantId = :tenantId
+               AND n.apiKeyId = :apiKeyId
                AND n.createdAt >= :from
             """)
-    long countSinceForTenant(@Param("tenantId") UUID tenantId, @Param("from") Instant from);
+    long countSinceForKey(@Param("tenantId") UUID tenantId, @Param("apiKeyId") UUID apiKeyId,
+                           @Param("from") Instant from);
 
     /**
      * One key's per-day outcome split, behind the daily spend summary.
