@@ -27,12 +27,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * The daily summary's shipping default: the tenant's own Owners and Admins
- * see it, the key's contact does not, until the operator flips to "all".
- * No recipients property is set here, so this is the default production
- * gets.
+ * {@code recipients=owners}: the tenant's own Owners and Admins see the
+ * summary and the key's contact does not — the mode it first shipped in,
+ * still available for a new integrator's first days.
  */
-@TestPropertySource(properties = "app.notifications.usage-alert.enabled=false")
+@TestPropertySource(properties = {
+        "app.notifications.usage-alert.enabled=false",
+        "app.notifications.daily-summary.recipients=owners"
+})
 class DailySpendSummaryPreviewTest extends AbstractApiKeyIntegrationTest {
 
     private static final String TEMPLATE = "trustpady_notification_utility";
@@ -50,7 +52,7 @@ class DailySpendSummaryPreviewTest extends AbstractApiKeyIntegrationTest {
     private DailySpendSummarizer summarizer;
 
     @Test
-    void byDefaultOnlyTheTenantsOwnPeopleAreTold() throws Exception {
+    void inOwnersModeOnlyTheTenantsOwnPeopleAreTold() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Preview Co 1", "Preview Owner 1",
                 "preview-owner-1@example.com", "password123");
         UUID tenantId = extractTenantId(owner);

@@ -13,8 +13,12 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Watches how much a tenant has sent today and raises an event the first
- * time each configured threshold is crossed.
+ * Watches how much each API key has sent today and raises an event the
+ * first time each configured threshold is crossed.
+ *
+ * <p>Per key, not per tenant (V19). The alert reaches the key's
+ * integrator, and a tenant can carry more than one integrator's key; a
+ * tenant-wide count told each of them about the others' traffic.
  *
  * <p>Thresholds step every hundred rather than escalating sparsely. The
  * sparse ladder (100, 200, 500, 1000) left the middle of a day unmarked:
@@ -63,13 +67,13 @@ public class DailyUsageMonitor {
      * observability problem into an outage.
      */
     public void recordSend(UUID tenantId, UUID apiKeyId) {
-        if (!enabled || thresholds.isEmpty()) {
+        if (!enabled || thresholds.isEmpty() || apiKeyId == null) {
             return;
         }
         try {
             LocalDate today = LocalDate.now(ZoneOffset.UTC);
             Instant dayStart = today.atStartOfDay(ZoneOffset.UTC).toInstant();
-            long sendsToday = notificationLogRepository.countSinceForTenant(tenantId, dayStart);
+            long sendsToday = notificationLogRepository.countSinceForKey(tenantId, apiKeyId, dayStart);
 
             for (int threshold : thresholds) {
                 if (sendsToday < threshold) {
@@ -79,7 +83,7 @@ public class DailyUsageMonitor {
                 // every later send asks this and is told the alert already
                 // went. The unique constraint is still the real guard —
                 // this only keeps the common case from being an exception.
-                if (!alertRepository.existsByTenantIdAndPeriodStartAndThreshold(tenantId, today, threshold)) {
+                if (!alertRepository.alreadyAlerted(tenantId, apiKeyId, today, threshold)) {
                     events.publishEvent(
                             new DailyUsageThresholdEvent(tenantId, apiKeyId, today, threshold, sendsToday));
                 }
@@ -87,7 +91,7 @@ public class DailyUsageMonitor {
                 return;
             }
         } catch (Exception e) {
-            log.warn("Daily usage check failed for tenant {}: {}", tenantId, e.getMessage());
+            log.warn("Daily usage check failed for key {} in tenant {}: {}", apiKeyId, tenantId, e.getMessage());
         }
     }
 }

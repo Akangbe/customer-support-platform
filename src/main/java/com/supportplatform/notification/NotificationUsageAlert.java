@@ -30,6 +30,10 @@ public class NotificationUsageAlert {
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
+    /** The key whose sends were counted (V19). Null only on rows from before the alert was per key. */
+    @Column(name = "api_key_id")
+    private UUID apiKeyId;
+
     /** The UTC day whose sends were counted — not when the mail went out. */
     @Column(name = "period_start", nullable = false)
     private LocalDate periodStart;
@@ -46,8 +50,9 @@ public class NotificationUsageAlert {
     protected NotificationUsageAlert() {
     }
 
-    public NotificationUsageAlert(UUID tenantId, LocalDate periodStart, int threshold, int sendsAtAlert) {
+    public NotificationUsageAlert(UUID tenantId, UUID apiKeyId, LocalDate periodStart, int threshold, int sendsAtAlert) {
         this.tenantId = tenantId;
+        this.apiKeyId = apiKeyId;
         this.periodStart = periodStart;
         this.threshold = threshold;
         this.sendsAtAlert = sendsAtAlert;
@@ -60,6 +65,10 @@ public class NotificationUsageAlert {
 
     public UUID getTenantId() {
         return tenantId;
+    }
+
+    public UUID getApiKeyId() {
+        return apiKeyId;
     }
 
     public LocalDate getPeriodStart() {
