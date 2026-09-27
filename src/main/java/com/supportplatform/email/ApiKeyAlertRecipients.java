@@ -43,10 +43,19 @@ public class ApiKeyAlertRecipients {
     public List<String> forKey(UUID tenantId, UUID apiKeyId) {
         Set<String> unique = new LinkedHashSet<>(ownersAndAdmins(tenantId));
 
+        // The column may hold several addresses (see ApiKeyService); each
+        // becomes its own recipient, never one comma-joined string, which
+        // SES would reject as a single malformed address.
         key(tenantId, apiKeyId)
                 .map(ApiKey::getContactEmail)
                 .filter(email -> email != null && !email.isBlank())
-                .ifPresent(unique::add);
+                .ifPresent(contacts -> {
+                    for (String address : contacts.split("[,;]")) {
+                        if (!address.isBlank()) {
+                            unique.add(address.trim());
+                        }
+                    }
+                });
 
         return new ArrayList<>(unique);
     }

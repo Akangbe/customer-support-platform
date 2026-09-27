@@ -122,6 +122,23 @@ class DailyUsageAlertTest extends AbstractApiKeyIntegrationTest {
     }
 
     @Test
+    void everyAddressOnTheKeyIsToldSeparately() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Alert Co 8", "Alert Owner 8",
+                "alert-owner-8@example.com", "password123");
+        String key = setUpSending(owner, "alert-pn-8", "person@partner.example, hello@partner.example");
+
+        for (int i = 0; i < 3; i++) {
+            send(key, "+141555599" + (70 + i));
+        }
+
+        // One mail per address, never one comma-joined recipient.
+        ArgumentCaptor<String> to = ArgumentCaptor.forClass(String.class);
+        verify(emailGateway, atLeastOnce()).send(to.capture(), anyString(), anyString(), anyString());
+        assertThat(to.getAllValues())
+                .containsExactly("alert-owner-8@example.com", "person@partner.example", "hello@partner.example");
+    }
+
+    @Test
     void theHigherThresholdAlertsSeparately() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Alert Co 4", "Alert Owner 4",
                 "alert-owner-4@example.com", "password123");

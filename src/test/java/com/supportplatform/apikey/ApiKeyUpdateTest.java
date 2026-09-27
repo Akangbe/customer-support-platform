@@ -97,6 +97,48 @@ class ApiKeyUpdateTest extends AbstractApiKeyIntegrationTest {
     }
 
     @Test
+    void severalAddressesAreKeptTidiedAndDeduplicated() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Patch Co 10", "Patch Owner 10",
+                "patch-owner-10@example.com", "password123");
+        UUID keyId = createKey(owner, "{\"name\":\"Partner key\",\"contactEmail\":\"ops@partner.example\"}");
+
+        mockMvc.perform(patch("/api/v1/api-keys/" + keyId)
+                        .session(owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"contactEmail\":\"ops@partner.example ,hello@partner.example; OPS@partner.example\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.contactEmail").value("ops@partner.example, hello@partner.example"));
+    }
+
+    @Test
+    void oneBadAddressInAListRejectsTheWholeChange() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Patch Co 11", "Patch Owner 11",
+                "patch-owner-11@example.com", "password123");
+        UUID keyId = createKey(owner, "{\"name\":\"Partner key\",\"contactEmail\":\"ops@partner.example\"}");
+
+        mockMvc.perform(patch("/api/v1/api-keys/" + keyId)
+                        .session(owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"contactEmail\":\"hello@partner.example, not-an-address\"}"))
+                .andExpect(status().isBadRequest());
+
+        // Nothing half-applied: the address on file is untouched.
+        assertThat(apiKeyRepository.findById(keyId).orElseThrow().getContactEmail()).isEqualTo("ops@partner.example");
+    }
+
+    @Test
+    void aKeyCanBeCreatedWithSeveralAddresses() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Patch Co 12", "Patch Owner 12",
+                "patch-owner-12@example.com", "password123");
+
+        UUID keyId = createKey(owner,
+                "{\"name\":\"Partner key\",\"contactEmail\":\"ops@partner.example,hello@partner.example\"}");
+
+        assertThat(apiKeyRepository.findById(keyId).orElseThrow().getContactEmail())
+                .isEqualTo("ops@partner.example, hello@partner.example");
+    }
+
+    @Test
     void aKeyBelongingToAnotherTenantIsNotFound() throws Exception {
         MockHttpSession firstOwner = registerTenantAndGetSession("Patch Co 4", "Patch Owner 4",
                 "patch-owner-4@example.com", "password123");
