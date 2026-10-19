@@ -19,8 +19,8 @@ import java.util.UUID;
  * Who hears about an API key's traffic: the tenant's own Owners and
  * Admins, plus the key's contact when one was recorded (V16).
  *
- * <p>Shared by the volume alert and the daily spend summary so the two can
- * never disagree about who is told.
+ * <p>Shared by the volume alert, the daily spend summary and the
+ * delivery-blocked alert so they can never disagree about who is told.
  */
 @Component
 public class ApiKeyAlertRecipients {
@@ -42,21 +42,21 @@ public class ApiKeyAlertRecipients {
      */
     public List<String> forKey(UUID tenantId, UUID apiKeyId) {
         Set<String> unique = new LinkedHashSet<>(ownersAndAdmins(tenantId));
+        key(tenantId, apiKeyId).ifPresent(key -> addContacts(unique, key.getContactEmail()));
+        return new ArrayList<>(unique);
+    }
 
-        // The column may hold several addresses (see ApiKeyService); each
-        // becomes its own recipient, never one comma-joined string, which
-        // SES would reject as a single malformed address.
-        key(tenantId, apiKeyId)
-                .map(ApiKey::getContactEmail)
-                .filter(email -> email != null && !email.isBlank())
-                .ifPresent(contacts -> {
-                    for (String address : contacts.split("[,;]")) {
-                        if (!address.isBlank()) {
-                            unique.add(address.trim());
-                        }
-                    }
-                });
-
+    /**
+     * Who hears about the tenant's WhatsApp number as a whole: its Owners
+     * and Admins, plus the contact of every active key. A block on the
+     * number stops every key's sends at once, so every integrator sending
+     * through it is told, not only the tenant's own people.
+     */
+    public List<String> forAllKeys(UUID tenantId) {
+        Set<String> unique = new LinkedHashSet<>(ownersAndAdmins(tenantId));
+        apiKeyRepository.findByTenantIdOrderByCreatedAtDesc(tenantId).stream()
+                .filter(ApiKey::isActive)
+                .forEach(key -> addContacts(unique, key.getContactEmail()));
         return new ArrayList<>(unique);
     }
 
@@ -71,6 +71,22 @@ public class ApiKeyAlertRecipients {
     /** The key's name, for naming it in a mail; empty if the key is not this tenant's. */
     public Optional<String> keyName(UUID tenantId, UUID apiKeyId) {
         return key(tenantId, apiKeyId).map(ApiKey::getName);
+    }
+
+    /**
+     * The column may hold several addresses (see ApiKeyService); each
+     * becomes its own recipient, never one comma-joined string, which SES
+     * would reject as a single malformed address.
+     */
+    private static void addContacts(Set<String> recipients, String contacts) {
+        if (contacts == null || contacts.isBlank()) {
+            return;
+        }
+        for (String address : contacts.split("[,;]")) {
+            if (!address.isBlank()) {
+                recipients.add(address.trim());
+            }
+        }
     }
 
     private Optional<ApiKey> key(UUID tenantId, UUID apiKeyId) {

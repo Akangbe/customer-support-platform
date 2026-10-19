@@ -1,9 +1,5 @@
 package com.supportplatform.email;
 
-import com.supportplatform.user.User;
-import com.supportplatform.user.UserRepository;
-import com.supportplatform.user.UserRole;
-import com.supportplatform.user.UserStatus;
 import com.supportplatform.whatsapp.DeliveryBlockedEvent;
 import com.supportplatform.whatsapp.MetaBlockingError;
 import org.slf4j.Logger;
@@ -39,6 +35,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * message — thousands of them, from the one outage. One alert per
  * (tenant, error) per {@link #COOLDOWN} instead, which is what makes this
  * safe to leave on.
+ *
+ * <p>Sent to the tenant's Owners and Admins and to the contact of every
+ * active API key ({@link ApiKeyAlertRecipients#forAllKeys}): an integrator
+ * sending through this number loses every message too, and should hear it
+ * from us rather than from their own customers.
  */
 @Component
 public class DeliveryBlockedEmailListener {
@@ -46,8 +47,6 @@ public class DeliveryBlockedEmailListener {
     private static final Logger log = LoggerFactory.getLogger(DeliveryBlockedEmailListener.class);
     /** Long enough that an outage is one alert, short enough to re-raise if it is still broken tomorrow. */
     static final Duration COOLDOWN = Duration.ofHours(6);
-    /** Who can actually act: billing and Business Manager access are Owner/Admin concerns, as connecting the number is. */
-    private static final List<UserRole> ALERTABLE_ROLES = List.of(UserRole.OWNER, UserRole.ADMIN);
 
     /**
      * Process-local, like {@code InMemoryRateLimiter} and for the same
@@ -58,11 +57,11 @@ public class DeliveryBlockedEmailListener {
     private final Map<String, Instant> lastAlerted = new ConcurrentHashMap<>();
 
     private final EmailGateway emailGateway;
-    private final UserRepository userRepository;
+    private final ApiKeyAlertRecipients alertRecipients;
 
-    public DeliveryBlockedEmailListener(EmailGateway emailGateway, UserRepository userRepository) {
+    public DeliveryBlockedEmailListener(EmailGateway emailGateway, ApiKeyAlertRecipients alertRecipients) {
         this.emailGateway = emailGateway;
-        this.userRepository = userRepository;
+        this.alertRecipients = alertRecipients;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -80,7 +79,7 @@ public class DeliveryBlockedEmailListener {
                 event.tenantId(), error.getCode(), scope, error.getExplanation(), event.failureReason());
 
         try {
-            notifyOwners(event, scope);
+            notifyEveryone(event, scope);
         } catch (Exception e) {
             log.warn("Could not email the delivery-blocked alert for tenant {}: {}", event.tenantId(), e.getMessage());
         }
@@ -101,11 +100,10 @@ public class DeliveryBlockedEmailListener {
                 : lastAlerted.replace(key, previous, now);
     }
 
-    private void notifyOwners(DeliveryBlockedEvent event, String scope) {
-        List<User> recipients = userRepository
-                .findAllByTenantIdAndRoleInAndStatus(event.tenantId(), ALERTABLE_ROLES, UserStatus.ACTIVE);
+    private void notifyEveryone(DeliveryBlockedEvent event, String scope) {
+        List<String> recipients = alertRecipients.forAllKeys(event.tenantId());
         if (recipients.isEmpty()) {
-            log.warn("No active Owner or Admin to alert about blocked WhatsApp delivery in tenant {}", event.tenantId());
+            log.warn("No one to alert about blocked WhatsApp delivery in tenant {}", event.tenantId());
             return;
         }
 
@@ -125,8 +123,8 @@ public class DeliveryBlockedEmailListener {
                 + "<p>Nothing will be delivered until this is resolved, and messages sent in the meantime are lost "
                 + "rather than queued.</p>";
 
-        for (User recipient : recipients) {
-            emailGateway.send(recipient.getEmail(), subject, html, text);
+        for (String recipient : recipients) {
+            emailGateway.send(recipient, subject, html, text);
         }
     }
 }

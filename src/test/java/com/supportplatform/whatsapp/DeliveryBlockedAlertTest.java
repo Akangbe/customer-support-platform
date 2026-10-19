@@ -7,7 +7,9 @@ import com.supportplatform.notification.NotificationLogRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.UUID;
@@ -18,6 +20,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * The alert that would have caught the 2026-09-05 billing outage on its
@@ -80,6 +84,32 @@ class DeliveryBlockedAlertTest extends AbstractWhatsAppIntegrationTest {
         verify(emailGateway, times(1)).send(eq("block-owner-2@example.com"), anyString(), anyString(), anyString());
     }
 
+    /**
+     * An integrator sending through the number loses every message too, so
+     * each address on an active key hears about it -- but not the contact
+     * of a key that has been switched off.
+     */
+    @Test
+    void aBlockAlsoAlertsEveryActiveKeysContact() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Block Co 5", "Block Owner 5", "block-owner-5@example.com", "password123");
+        UUID tenantId = extractTenantId(owner);
+        String phoneNumberId = connectWhatsApp(owner, "block-pn-5");
+        issueKey(owner, "Trustpady production", "dev@integrator-5.example.com, ops@integrator-5.example.com");
+        String retired = issueKey(owner, "Old client", "old@retired-5.example.com");
+        mockMvc.perform(post("/api/v1/api-keys/" + retired + "/deactivate").session(owner))
+                .andExpect(status().is2xxSuccessful());
+        seedNotification(tenantId, "wamid.BLOCK-5");
+
+        postSignedWebhook(failedStatusPayload(phoneNumberId, "wamid.BLOCK-5", 131042,
+                "Business eligibility payment issue", "unsettled payments"));
+        inboundEventProcessor.processPending();
+
+        verify(emailGateway).send(eq("block-owner-5@example.com"), anyString(), anyString(), anyString());
+        verify(emailGateway).send(eq("dev@integrator-5.example.com"), anyString(), anyString(), anyString());
+        verify(emailGateway).send(eq("ops@integrator-5.example.com"), anyString(), anyString(), anyString());
+        verify(emailGateway, never()).send(eq("old@retired-5.example.com"), anyString(), anyString(), anyString());
+    }
+
     /** An ordinary per-recipient failure is background noise and must never page anyone. */
     @Test
     void anOrdinaryDeliveryFailureRaisesNoAlert() throws Exception {
@@ -114,6 +144,17 @@ class DeliveryBlockedAlertTest extends AbstractWhatsAppIntegrationTest {
                 .contains("132015")
                 .contains("trustpady_notification_utility")
                 .doesNotContain("EVERY message");
+    }
+
+    /** @return the new key's id */
+    private String issueKey(MockHttpSession owner, String name, String contactEmail) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/api-keys")
+                        .session(owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"%s\",\"contactEmail\":\"%s\"}".formatted(name, contactEmail)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("key").get("id").asText();
     }
 
     private void seedNotification(UUID tenantId, String waMessageId) {
