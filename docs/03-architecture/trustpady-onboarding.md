@@ -180,6 +180,13 @@ characters with no newlines, tabs or more than 4 consecutive spaces
 (Meta's own limits, checked here so they come back as a `400`).
 `buttonUrlParam` works the same with either.
 
+**Header placeholders.** A text header with its own `{{1}}` is filled by
+`headerParams`, a list in placeholder order, separate from the body.
+Leaving it out is Meta error `131008`, and no body count will fix it.
+Header values are at most 60 characters (Meta's limit on the whole header
+line) with no newlines or tabs. `headerParams` is for positional templates
+only; with `namedBodyParams` it is a `400`.
+
 `multipurpose_trustpady_utility` is a named template (body: "Hi,
 {{variable}} on your Trustpady account has arrived.") with a dynamic URL
 button, so it needs both `namedBodyParams` and `buttonUrlParam`. Leaving
@@ -197,6 +204,22 @@ curl -sS -X POST "$BASE/api/v1/notifications/send" \
         "languageCode": "en",
         "namedBodyParams": {"variable": "a payment of ₦25,000"},
         "buttonUrlParam": "dashboard"
+      }'
+```
+
+`trustpady_new_notification_dynamic_utility` (`en_US`) has a `{{1}}` in
+its header, so it needs `headerParams` alongside its body values:
+
+```bash
+curl -sS -X POST "$BASE/api/v1/notifications/send" \
+  -H "Authorization: Bearer rd_live_9f2c….<secret>" \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "recipient": "+2348012345678",
+        "templateName": "trustpady_new_notification_dynamic_utility",
+        "languageCode": "en_US",
+        "headerParams": ["Payment received"],
+        "bodyParams": ["…"]
       }'
 ```
 

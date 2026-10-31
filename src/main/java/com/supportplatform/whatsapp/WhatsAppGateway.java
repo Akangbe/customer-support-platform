@@ -22,6 +22,16 @@ public interface WhatsAppGateway {
                              String languageCode, List<String> params, String buttonUrlParam);
 
     /**
+     * As {@link #sendTemplate}, for a template whose text header has its own
+     * positional placeholder ({@code {{1}}}).
+     *
+     * @param headerParams  header-component substitutions, in order, at least one entry
+     */
+    SendResult sendTemplateWithHeader(WhatsAppConnection connection, String toPhone, String templateName,
+                                       String languageCode, List<String> headerParams, List<String> params,
+                                       String buttonUrlParam);
+
+    /**
      * For a template created with named placeholders ({@code {{variable}}}),
      * which Meta refuses to fill positionally.
      *

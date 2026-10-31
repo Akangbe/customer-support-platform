@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,10 +46,18 @@ public record SendNotificationRequest(
                     message = "must not contain newlines, tabs or more than 4 consecutive spaces")
                 String> namedBodyParams,
 
-        @Size(max = 1024) String buttonUrlParam
+        @Size(max = 1024) String buttonUrlParam,
+
+        // A text header's {{1}}. 60 is Meta's limit on the whole header line,
+        // so a longer value can never be sent; checked here to make that a 400.
+        List<@NotNull @Size(max = 60)
+            @Pattern(regexp = "^[^\\r\\n\\t]*$", message = "must not contain newlines or tabs")
+                String> headerParams
 ) {
     public SendNotificationRequest {
         bodyParams = bodyParams == null ? List.of() : List.copyOf(bodyParams);
+        // Not List.copyOf, for the same reason as namedBodyParams below.
+        headerParams = headerParams == null ? List.of() : Collections.unmodifiableList(new ArrayList<>(headerParams));
         // Not Map.copyOf: that throws on a null value before validation can
         // report it as a field error, and it would lose the caller's order.
         namedBodyParams = namedBodyParams == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(namedBodyParams));
@@ -61,5 +70,12 @@ public record SendNotificationRequest(
     @AssertTrue(message = "send either bodyParams (positional template) or namedBodyParams (named template), not both")
     public boolean isOnlyOneKindOfBodyParams() {
         return bodyParams.isEmpty() || namedBodyParams.isEmpty();
+    }
+
+    // Header params are positional only. A template written with named
+    // variables names its header variable too, which this field cannot say.
+    @AssertTrue(message = "headerParams fills a positional ({{1}}) header and cannot be combined with namedBodyParams")
+    public boolean isHeaderParamsPositional() {
+        return headerParams.isEmpty() || namedBodyParams.isEmpty();
     }
 }

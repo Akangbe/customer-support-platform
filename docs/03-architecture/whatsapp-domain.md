@@ -187,6 +187,10 @@ public interface WhatsAppGateway {
     SendResult sendText(WhatsAppConnection connection, String toPhone, String body);
     SendResult sendTemplate(WhatsAppConnection connection, String toPhone, String templateName,
                              String languageCode, List<String> params, String buttonUrlParam);
+    // For a positional template whose text header has its own {{1}}.
+    SendResult sendTemplateWithHeader(WhatsAppConnection connection, String toPhone, String templateName,
+                                       String languageCode, List<String> headerParams, List<String> params,
+                                       String buttonUrlParam);
     // For templates written with named placeholders ({{variable}}): each
     // body parameter goes to Meta with its parameter_name.
     SendResult sendNamedTemplate(WhatsAppConnection connection, String toPhone, String templateName,

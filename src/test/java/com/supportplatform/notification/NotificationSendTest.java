@@ -191,6 +191,75 @@ class NotificationSendTest extends AbstractApiKeyIntegrationTest {
     }
 
     @Test
+    void headerParamsGoToTheHeaderSendWithTheBodyAndButton() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Send Co 14", "Send Owner 14", "send-owner-14@example.com", "password123");
+        connectWhatsApp(owner, "send-pn-14");
+        approveTemplate(owner, "trustpady_new_notification_dynamic_utility");
+        String key = issueApiKey(owner, "Sender");
+
+        when(gateway.sendTemplateWithHeader(any(), anyString(), anyString(), anyString(), any(), any(), any()))
+                .thenReturn(SendResult.success("wamid.SEND14"));
+
+        mockMvc.perform(post("/api/v1/notifications/send")
+                        .header("Authorization", "Bearer " + key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"recipient":"+14155559314","templateName":"trustpady_new_notification_dynamic_utility",
+                                 "languageCode":"en_US","headerParams":["Payment received"],
+                                 "bodyParams":["Ada"],"buttonUrlParam":"orders/1"}
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("SENT"));
+
+        verify(gateway).sendTemplateWithHeader(any(), eq("+14155559314"), eq("trustpady_new_notification_dynamic_utility"),
+                eq("en_US"), eq(List.of("Payment received")), eq(List.of("Ada")), eq("orders/1"));
+        verify(gateway, never()).sendTemplate(any(), anyString(), anyString(), anyString(), any(), any());
+        verify(gateway, never()).sendNamedTemplate(any(), anyString(), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    void headerParamsWithNamedBodyParamsAreRejected() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Send Co 15", "Send Owner 15", "send-owner-15@example.com", "password123");
+        connectWhatsApp(owner, "send-pn-15");
+        approveTemplate(owner, "order_shipped");
+        String key = issueApiKey(owner, "Sender");
+
+        mockMvc.perform(post("/api/v1/notifications/send")
+                        .header("Authorization", "Bearer " + key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"recipient":"+14155559315","templateName":"order_shipped",
+                                 "headerParams":["Hi"],"namedBodyParams":{"variable":"x"}}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("headerParamsPositional"));
+
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
+    void aHeaderValueMetaWouldRefuseIsRejected() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Send Co 16", "Send Owner 16", "send-owner-16@example.com", "password123");
+        connectWhatsApp(owner, "send-pn-16");
+        approveTemplate(owner, "order_shipped");
+        String key = issueApiKey(owner, "Sender");
+
+        for (String badValue : List.of("line\\nbreak", "tab\\there", "x".repeat(61))) {
+            mockMvc.perform(post("/api/v1/notifications/send")
+                            .header("Authorization", "Bearer " + key)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"recipient":"+14155559316","templateName":"order_shipped",
+                                     "headerParams":["%s"]}
+                                    """.formatted(badValue)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.fieldErrors[0].field").value("headerParams[0]"));
+        }
+
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
     void anExplicitLanguageCodeIsUsed() throws Exception {
         MockHttpSession owner = registerTenantAndGetSession("Send Co 3", "Send Owner 3", "send-owner-3@example.com", "password123");
         connectWhatsApp(owner, "send-pn-3");

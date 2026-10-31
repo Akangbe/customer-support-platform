@@ -50,6 +50,16 @@ public class MockWhatsAppGateway implements WhatsAppGateway {
     }
 
     @Override
+    public SendResult sendTemplateWithHeader(WhatsAppConnection connection, String toPhone, String templateName,
+                                              String languageCode, List<String> headerParams, List<String> params,
+                                              String buttonUrlParam) {
+        log.info("[mock] template '{}' ({}) to {} with {} header param(s), {} body param(s){}", templateName,
+                languageCode, toPhone, headerParams.size(), params.size(),
+                buttonUrlParam == null ? "" : " and a url button param");
+        return SendResult.success(mockMessageId());
+    }
+
+    @Override
     public SendResult sendNamedTemplate(WhatsAppConnection connection, String toPhone, String templateName,
                                          String languageCode, Map<String, String> namedParams, String buttonUrlParam) {
         log.info("[mock] template '{}' ({}) to {} with named body param(s) {}{}", templateName, languageCode, toPhone,
