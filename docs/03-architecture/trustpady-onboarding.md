@@ -181,7 +181,11 @@ characters with no newlines, tabs or more than 4 consecutive spaces
 `buttonUrlParam` works the same with either.
 
 `multipurpose_trustpady_utility` is a named template (body: "Hi,
-{{variable}} on your Trustpady account has arrived."):
+{{variable}} on your Trustpady account has arrived.") with a dynamic URL
+button, so it needs both `namedBodyParams` and `buttonUrlParam`. Leaving
+out the button value is Meta error `131008 Required parameter is missing`.
+`buttonUrlParam` is only the suffix appended to the URL registered on the
+button in WhatsApp Manager, not a whole URL:
 
 ```bash
 curl -sS -X POST "$BASE/api/v1/notifications/send" \
@@ -191,7 +195,8 @@ curl -sS -X POST "$BASE/api/v1/notifications/send" \
         "recipient": "+2348012345678",
         "templateName": "multipurpose_trustpady_utility",
         "languageCode": "en",
-        "namedBodyParams": {"variable": "a payment of ₦25,000"}
+        "namedBodyParams": {"variable": "a payment of ₦25,000"},
+        "buttonUrlParam": "dashboard"
       }'
 ```
 
