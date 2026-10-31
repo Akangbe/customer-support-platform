@@ -2,6 +2,7 @@ package com.supportplatform.whatsapp;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The boundary interface (whatsapp-integration.md §10, Rule 4). This is
@@ -19,6 +20,16 @@ public interface WhatsAppGateway {
      */
     SendResult sendTemplate(WhatsAppConnection connection, String toPhone, String templateName,
                              String languageCode, List<String> params, String buttonUrlParam);
+
+    /**
+     * For a template created with named placeholders ({@code {{variable}}}),
+     * which Meta refuses to fill positionally.
+     *
+     * @param namedParams     placeholder name to value, at least one entry
+     * @param buttonUrlParam  as for {@link #sendTemplate}
+     */
+    SendResult sendNamedTemplate(WhatsAppConnection connection, String toPhone, String templateName,
+                                  String languageCode, Map<String, String> namedParams, String buttonUrlParam);
 
     /** Link-based, not upload-first (ADR-020) — {@code link} is a short-lived presigned storage URL Meta fetches itself. */
     SendResult sendMedia(WhatsAppConnection connection, String toPhone, String mediaType, URI link, String caption);

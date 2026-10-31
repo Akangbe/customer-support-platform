@@ -135,8 +135,14 @@ public class NotificationSendService {
         log.info("SEND CALLING META phone_number_id={} template='{}' recipient={} notification={}",
                 connection.getPhoneNumberId(), request.templateName(), mask(request.recipient()), reserved.getId());
 
-        SendResult result = gateway.sendTemplate(connection, request.recipient(), request.templateName(),
-                request.languageCode(), request.bodyParams(), request.buttonUrlParam());
+        // The request is validated to carry at most one kind, so an empty
+        // named map means a positional (or parameterless) template: exactly
+        // the call every existing caller made before named support existed.
+        SendResult result = request.namedBodyParams().isEmpty()
+                ? gateway.sendTemplate(connection, request.recipient(), request.templateName(),
+                        request.languageCode(), request.bodyParams(), request.buttonUrlParam())
+                : gateway.sendNamedTemplate(connection, request.recipient(), request.templateName(),
+                        request.languageCode(), request.namedBodyParams(), request.buttonUrlParam());
 
         if (result.success()) {
             reserved.markSent(result.waMessageId());

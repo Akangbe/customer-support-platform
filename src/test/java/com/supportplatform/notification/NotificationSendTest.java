@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,7 +23,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -93,6 +96,98 @@ class NotificationSendTest extends AbstractApiKeyIntegrationTest {
         verify(gateway).sendTemplate(any(), eq("+14155559302"), eq("order_shipped"), eq("en"),
                 params.capture(), eq("track/ORD-42"));
         assertThat(params.getValue()).containsExactly("Ada", "ORD-42");
+    }
+
+    @Test
+    void namedBodyParamsGoToTheNamedSendAndPositionalOnesDoNot() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Send Co 10", "Send Owner 10", "send-owner-10@example.com", "password123");
+        connectWhatsApp(owner, "send-pn-10");
+        approveTemplate(owner, "multipurpose_trustpady_utility");
+        String key = issueApiKey(owner, "Sender");
+
+        when(gateway.sendNamedTemplate(any(), anyString(), anyString(), anyString(), any(), any()))
+                .thenReturn(SendResult.success("wamid.SEND10"));
+
+        mockMvc.perform(post("/api/v1/notifications/send")
+                        .header("Authorization", "Bearer " + key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"recipient":"+14155559310","templateName":"multipurpose_trustpady_utility",
+                                 "languageCode":"en","namedBodyParams":{"variable":"a payment of ₦25,000"}}
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("SENT"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> named = ArgumentCaptor.forClass(Map.class);
+        verify(gateway).sendNamedTemplate(any(), eq("+14155559310"), eq("multipurpose_trustpady_utility"), eq("en"),
+                named.capture(), isNull());
+        assertThat(named.getValue()).containsExactly(Map.entry("variable", "a payment of ₦25,000"));
+        verify(gateway, never()).sendTemplate(any(), anyString(), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    void bodyParamsAndNamedBodyParamsTogetherAreRejected() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Send Co 11", "Send Owner 11", "send-owner-11@example.com", "password123");
+        connectWhatsApp(owner, "send-pn-11");
+        approveTemplate(owner, "order_shipped");
+        String key = issueApiKey(owner, "Sender");
+
+        mockMvc.perform(post("/api/v1/notifications/send")
+                        .header("Authorization", "Bearer " + key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"recipient":"+14155559311","templateName":"order_shipped",
+                                 "bodyParams":["Ada"],"namedBodyParams":{"name":"Ada"}}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("onlyOneKindOfBodyParams"));
+
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
+    void anInvalidVariableNameIsRejected() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Send Co 12", "Send Owner 12", "send-owner-12@example.com", "password123");
+        connectWhatsApp(owner, "send-pn-12");
+        approveTemplate(owner, "order_shipped");
+        String key = issueApiKey(owner, "Sender");
+
+        for (String badName : List.of("Variable", "1st", "has-dash", "has space")) {
+            mockMvc.perform(post("/api/v1/notifications/send")
+                            .header("Authorization", "Bearer " + key)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"recipient":"+14155559312","templateName":"order_shipped",
+                                     "namedBodyParams":{"%s":"x"}}
+                                    """.formatted(badName)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.fieldErrors[0].field").value("namedBodyParams[" + badName + "]"));
+        }
+
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
+    void aNamedValueMetaWouldRefuseIsRejected() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Send Co 13", "Send Owner 13", "send-owner-13@example.com", "password123");
+        connectWhatsApp(owner, "send-pn-13");
+        approveTemplate(owner, "order_shipped");
+        String key = issueApiKey(owner, "Sender");
+
+        for (String badValue : List.of("line\\nbreak", "tab\\there", "five     spaces", "x".repeat(1025))) {
+            mockMvc.perform(post("/api/v1/notifications/send")
+                            .header("Authorization", "Bearer " + key)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"recipient":"+14155559313","templateName":"order_shipped",
+                                     "namedBodyParams":{"variable":"%s"}}
+                                    """.formatted(badValue)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.fieldErrors[0].field").value("namedBodyParams[variable]"));
+        }
+
+        verifyNoInteractions(gateway);
     }
 
     @Test

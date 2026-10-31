@@ -163,6 +163,38 @@ curl -sS -X POST "$BASE/api/v1/notifications/send" \
 `X-API-Key: rd_live_…` is accepted as an alternative header for clients
 that reserve `Authorization`.
 
+### Positional vs named templates
+
+How a template's placeholders were written in WhatsApp Manager decides
+which field fills them, and Meta rejects the wrong one:
+
+- **Positional** (`{{1}}`, `{{2}}`): send `bodyParams`, a list in
+  placeholder order. Too many or too few is Meta error 132000.
+- **Named** (`{{variable}}`): send `namedBodyParams`, an object of
+  placeholder name to value. Sending these as `bodyParams` is Meta error
+  `#100 Invalid parameter`, even with the right count.
+
+A request carries one or the other; both together is a `400`. Names must
+match `^[a-z_][a-z0-9_]*$`, and each named value is at most 1024
+characters with no newlines, tabs or more than 4 consecutive spaces
+(Meta's own limits, checked here so they come back as a `400`).
+`buttonUrlParam` works the same with either.
+
+`multipurpose_trustpady_utility` is a named template (body: "Hi,
+{{variable}} on your Trustpady account has arrived."):
+
+```bash
+curl -sS -X POST "$BASE/api/v1/notifications/send" \
+  -H "Authorization: Bearer rd_live_9f2c….<secret>" \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "recipient": "+2348012345678",
+        "templateName": "multipurpose_trustpady_utility",
+        "languageCode": "en",
+        "namedBodyParams": {"variable": "a payment of ₦25,000"}
+      }'
+```
+
 The full caller-facing contract — parameters, every error code, status
 polling — is the partner-facing guide; do not paste this runbook to them,
 it names internals they should not need.

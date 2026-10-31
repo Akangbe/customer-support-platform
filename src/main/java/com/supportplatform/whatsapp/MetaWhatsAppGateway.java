@@ -64,11 +64,42 @@ public class MetaWhatsAppGateway implements WhatsAppGateway {
     @Override
     public SendResult sendTemplate(WhatsAppConnection connection, String toPhone, String templateName,
                                     String languageCode, List<String> params, String buttonUrlParam) {
+        return send(connection, templatePayload(toPhone, templateName, languageCode,
+                positionalParameters(params), buttonUrlParam));
+    }
+
+    @Override
+    public SendResult sendNamedTemplate(WhatsAppConnection connection, String toPhone, String templateName,
+                                         String languageCode, Map<String, String> namedParams, String buttonUrlParam) {
+        return send(connection, templatePayload(toPhone, templateName, languageCode,
+                namedParameters(namedParams), buttonUrlParam));
+    }
+
+    static List<Map<String, Object>> positionalParameters(List<String> params) {
+        return params.stream()
+                .<Map<String, Object>>map(p -> Map.of("type", "text", "text", p))
+                .toList();
+    }
+
+    /**
+     * A template created with {@code {{variable}}} placeholders is matched
+     * by name, not position: without {@code parameter_name} Meta answers
+     * {@code #100 Invalid parameter} even when the count is right.
+     */
+    static List<Map<String, Object>> namedParameters(Map<String, String> namedParams) {
+        return namedParams.entrySet().stream()
+                .<Map<String, Object>>map(e -> Map.of("type", "text", "parameter_name", e.getKey(), "text", e.getValue()))
+                .toList();
+    }
+
+    /** Package-private, like the two above, so the exact Graph API shape can be asserted without a network call. */
+    static Map<String, Object> templatePayload(String toPhone, String templateName, String languageCode,
+                                               List<Map<String, Object>> bodyParameters, String buttonUrlParam) {
         List<Map<String, Object>> components = new ArrayList<>();
-        if (!params.isEmpty()) {
+        if (!bodyParameters.isEmpty()) {
             components.add(Map.of(
                     "type", "body",
-                    "parameters", params.stream().map(p -> Map.of("type", "text", "text", p)).toList()
+                    "parameters", bodyParameters
             ));
         }
         if (buttonUrlParam != null && !buttonUrlParam.isBlank()) {
@@ -87,13 +118,12 @@ public class MetaWhatsAppGateway implements WhatsAppGateway {
                 ? Map.of("name", templateName, "language", Map.of("code", languageCode))
                 : Map.of("name", templateName, "language", Map.of("code", languageCode), "components", components);
 
-        Map<String, Object> payload = Map.of(
+        return Map.of(
                 "messaging_product", "whatsapp",
                 "to", toPhone,
                 "type", "template",
                 "template", template
         );
-        return send(connection, payload);
     }
 
     @Override
