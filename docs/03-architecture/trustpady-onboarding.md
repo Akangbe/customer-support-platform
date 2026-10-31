@@ -207,21 +207,29 @@ curl -sS -X POST "$BASE/api/v1/notifications/send" \
       }'
 ```
 
-`trustpady_new_notification_dynamic_utility` (`en_US`) has a `{{1}}` in
-its header, so it needs `headerParams` alongside its body values:
+The other two Trustpady templates, for reference. The `{{1}}` shown in
+WhatsApp Manager's "Enter content for {{1}}" box belongs to whichever
+component it sits under; for these it is never the header.
 
-```bash
-curl -sS -X POST "$BASE/api/v1/notifications/send" \
-  -H "Authorization: Bearer rd_live_9f2c….<secret>" \
-  -H 'Content-Type: application/json' \
-  -d '{
-        "recipient": "+2348012345678",
-        "templateName": "trustpady_new_notification_dynamic_utility",
-        "languageCode": "en_US",
-        "headerParams": ["Payment received"],
-        "bodyParams": ["…"]
-      }'
-```
+- `trustpady_verification_code` (`en_US`): one positional body value, the
+  code. No `buttonUrlParam`; sending one is Meta error `132018`.
+
+  ```json
+  { "templateName": "trustpady_verification_code", "languageCode": "en_US",
+    "bodyParams": ["123456"] }
+  ```
+
+- `trustpady_new_notification_dynamic_utility` (`en_US`): header and body
+  are fixed text. Its only placeholder is the OPEN TRUSTPADY URL button,
+  so it takes `buttonUrlParam` and nothing else. Leaving it out is `131008`;
+  adding body values is `132000`.
+
+  ```json
+  { "templateName": "trustpady_new_notification_dynamic_utility", "languageCode": "en_US",
+    "buttonUrlParam": "dashboard" }
+  ```
+
+None of the three uses `headerParams`.
 
 The full caller-facing contract — parameters, every error code, status
 polling — is the partner-facing guide; do not paste this runbook to them,
