@@ -65,14 +65,22 @@ public class MetaWhatsAppGateway implements WhatsAppGateway {
     public SendResult sendTemplate(WhatsAppConnection connection, String toPhone, String templateName,
                                     String languageCode, List<String> params, String buttonUrlParam) {
         return send(connection, templatePayload(toPhone, templateName, languageCode,
-                positionalParameters(params), buttonUrlParam));
+                List.of(), positionalParameters(params), buttonUrlParam));
+    }
+
+    @Override
+    public SendResult sendTemplateWithHeader(WhatsAppConnection connection, String toPhone, String templateName,
+                                              String languageCode, List<String> headerParams, List<String> params,
+                                              String buttonUrlParam) {
+        return send(connection, templatePayload(toPhone, templateName, languageCode,
+                positionalParameters(headerParams), positionalParameters(params), buttonUrlParam));
     }
 
     @Override
     public SendResult sendNamedTemplate(WhatsAppConnection connection, String toPhone, String templateName,
                                          String languageCode, Map<String, String> namedParams, String buttonUrlParam) {
         return send(connection, templatePayload(toPhone, templateName, languageCode,
-                namedParameters(namedParams), buttonUrlParam));
+                List.of(), namedParameters(namedParams), buttonUrlParam));
     }
 
     static List<Map<String, Object>> positionalParameters(List<String> params) {
@@ -94,8 +102,15 @@ public class MetaWhatsAppGateway implements WhatsAppGateway {
 
     /** Package-private, like the two above, so the exact Graph API shape can be asserted without a network call. */
     static Map<String, Object> templatePayload(String toPhone, String templateName, String languageCode,
+                                               List<Map<String, Object>> headerParameters,
                                                List<Map<String, Object>> bodyParameters, String buttonUrlParam) {
         List<Map<String, Object>> components = new ArrayList<>();
+        if (!headerParameters.isEmpty()) {
+            components.add(Map.of(
+                    "type", "header",
+                    "parameters", headerParameters
+            ));
+        }
         if (!bodyParameters.isEmpty()) {
             components.add(Map.of(
                     "type", "body",

@@ -135,14 +135,21 @@ public class NotificationSendService {
         log.info("SEND CALLING META phone_number_id={} template='{}' recipient={} notification={}",
                 connection.getPhoneNumberId(), request.templateName(), mask(request.recipient()), reserved.getId());
 
-        // The request is validated to carry at most one kind, so an empty
-        // named map means a positional (or parameterless) template: exactly
-        // the call every existing caller made before named support existed.
-        SendResult result = request.namedBodyParams().isEmpty()
-                ? gateway.sendTemplate(connection, request.recipient(), request.templateName(),
-                        request.languageCode(), request.bodyParams(), request.buttonUrlParam())
-                : gateway.sendNamedTemplate(connection, request.recipient(), request.templateName(),
-                        request.languageCode(), request.namedBodyParams(), request.buttonUrlParam());
+        // The request is validated so named body params never come with
+        // positional body or header params. With neither named params nor a
+        // header, this is exactly the call every caller made before either
+        // existed.
+        SendResult result;
+        if (!request.namedBodyParams().isEmpty()) {
+            result = gateway.sendNamedTemplate(connection, request.recipient(), request.templateName(),
+                    request.languageCode(), request.namedBodyParams(), request.buttonUrlParam());
+        } else if (!request.headerParams().isEmpty()) {
+            result = gateway.sendTemplateWithHeader(connection, request.recipient(), request.templateName(),
+                    request.languageCode(), request.headerParams(), request.bodyParams(), request.buttonUrlParam());
+        } else {
+            result = gateway.sendTemplate(connection, request.recipient(), request.templateName(),
+                    request.languageCode(), request.bodyParams(), request.buttonUrlParam());
+        }
 
         if (result.success()) {
             reserved.markSent(result.waMessageId());
