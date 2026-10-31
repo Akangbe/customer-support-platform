@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -45,6 +46,14 @@ public class MockWhatsAppGateway implements WhatsAppGateway {
                                     String languageCode, List<String> params, String buttonUrlParam) {
         log.info("[mock] template '{}' ({}) to {} with {} body param(s){}", templateName, languageCode, toPhone,
                 params.size(), buttonUrlParam == null ? "" : " and a url button param");
+        return SendResult.success(mockMessageId());
+    }
+
+    @Override
+    public SendResult sendNamedTemplate(WhatsAppConnection connection, String toPhone, String templateName,
+                                         String languageCode, Map<String, String> namedParams, String buttonUrlParam) {
+        log.info("[mock] template '{}' ({}) to {} with named body param(s) {}{}", templateName, languageCode, toPhone,
+                namedParams.keySet(), buttonUrlParam == null ? "" : " and a url button param");
         return SendResult.success(mockMessageId());
     }
 
