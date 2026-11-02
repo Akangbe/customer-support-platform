@@ -813,3 +813,33 @@ tenant. A business with its own number gets its own tenant and neither applies.
 ### Revisit Conditions
 
 Add per-client template ownership before a second client shares a number.
+
+---
+
+## ADR-024 — Client users: a role denied by default, not a separate login
+
+**Status:** Accepted
+
+### Context
+
+People at client businesses need to sign in. Trustpady shares the operator's
+tenant, so an ordinary tenant user would reach the operator's inbox and team.
+
+### Options Considered
+
+1. A separate user table and login. Isolated, but duplicates passwords,
+   invites and lockout, and needs its own principal type.
+2. A `CLIENT` role on `app_user`, tied to one client account.
+
+### Decision
+
+**Option 2.** The session chain names the staff roles for everything outside
+`/api/v1/client/**` and `/api/v1/users/me`, so a `CLIENT` user, or any role
+added later, is refused unless a rule admits it. A test walks every mapped
+route to hold this. Client handlers read through `ClientScope`, which re-reads
+the user on each call so that disabling someone takes effect at once.
+
+### Consequences
+
+Every query that lists a tenant's users has to exclude `CLIENT`, because they
+share the table. The database check ties the role to having a client account.

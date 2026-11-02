@@ -90,7 +90,12 @@ public class SecurityConfig {
                                 "/actuator/health",
                                 "/actuator/info"
                         ).permitAll()
-                        .anyRequest().authenticated()
+                        .requestMatchers("/api/v1/client/**").hasRole("CLIENT")
+                        .requestMatchers("/api/v1/users/me").authenticated()
+                        // Staff roles named outright, so a CLIENT user, or any role
+                        // added later, is refused everywhere unless a rule above
+                        // admits it. This also covers the /ws handshake.
+                        .anyRequest().hasAnyRole("OWNER", "ADMIN", "MANAGER", "AGENT")
                 )
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(authenticationEntryPoint)

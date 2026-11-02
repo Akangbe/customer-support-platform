@@ -26,6 +26,7 @@ public class AuthenticatedPrincipal implements UserDetails {
     private final String name;
     private final String passwordHash;
     private final UserRole role;
+    private final UUID clientAccountId;
     private final boolean enabled;
 
     public AuthenticatedPrincipal(User user) {
@@ -35,6 +36,7 @@ public class AuthenticatedPrincipal implements UserDetails {
         this.name = user.getName();
         this.passwordHash = user.getPasswordHash();
         this.role = user.getRole();
+        this.clientAccountId = user.getClientAccountId();
         this.enabled = user.getStatus() == ACTIVE;
     }
 
@@ -52,6 +54,11 @@ public class AuthenticatedPrincipal implements UserDetails {
 
     public UserRole getRole() {
         return role;
+    }
+
+    /** Null except for a CLIENT user. */
+    public UUID getClientAccountId() {
+        return clientAccountId;
     }
 
     @Override
