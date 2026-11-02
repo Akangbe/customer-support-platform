@@ -115,7 +115,12 @@ public class NotificationUsageService {
         long distinctRecipients(Instant start, Instant end);
     }
 
-    private NotificationUsageResponse usage(UsageSource source, LocalDate from, LocalDate to) {
+    /** A checked range of whole UTC days, and the half-open instants that cover it. */
+    public record UsageRange(LocalDate start, LocalDate end, Instant fromInstant, Instant toInstant) {
+    }
+
+    /** Applies the default range and the {@link #MAX_RANGE_DAYS} limit for any caller reading by date. */
+    public UsageRange resolveRange(LocalDate from, LocalDate to) {
         LocalDate end = to == null ? LocalDate.now(ZoneOffset.UTC) : to;
         LocalDate start = from == null ? end.minusDays(DEFAULT_RANGE_DAYS - 1L) : from;
         validate(start, end);
@@ -124,8 +129,16 @@ public class NotificationUsageService {
         // including, 00:00:00 on the day after the last. An inclusive upper
         // bound would either drop the final day's sends or double-count the
         // boundary depending on how it was written.
-        Instant fromInstant = start.atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant toInstant = end.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        return new UsageRange(start, end, start.atStartOfDay(ZoneOffset.UTC).toInstant(),
+                end.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+    }
+
+    private NotificationUsageResponse usage(UsageSource source, LocalDate from, LocalDate to) {
+        UsageRange range = resolveRange(from, to);
+        LocalDate start = range.start();
+        LocalDate end = range.end();
+        Instant fromInstant = range.fromInstant();
+        Instant toInstant = range.toInstant();
 
         Map<NotificationStatus, Long> counts = new EnumMap<>(NotificationStatus.class);
         for (NotificationLogRepository.StatusCountRow row

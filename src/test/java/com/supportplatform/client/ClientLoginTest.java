@@ -35,7 +35,7 @@ class ClientLoginTest extends AbstractApiKeyIntegrationTest {
 
     /** The only mapped routes a CLIENT session may get past security on. */
     private static final Set<String> OPEN_TO_CLIENT = Set.of(
-            "/api/v1/client/me", "/api/v1/users/me",
+            "/api/v1/users/me",
             "/api/v1/auth/login", "/api/v1/auth/register-tenant", "/api/v1/auth/accept-invite",
             "/api/v1/whatsapp/webhook", "/error");
 
@@ -74,7 +74,7 @@ class ClientLoginTest extends AbstractApiKeyIntegrationTest {
 
         for (RequestMappingInfo info : handlerMapping.getHandlerMethods().keySet()) {
             for (String pattern : info.getPatternValues()) {
-                if (OPEN_TO_CLIENT.contains(pattern)) {
+                if (OPEN_TO_CLIENT.contains(pattern) || pattern.startsWith("/api/v1/client/")) {
                     continue;
                 }
                 String uri = pattern.replaceAll("\\{[^}]+}", UUID.randomUUID().toString());

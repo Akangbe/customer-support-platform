@@ -163,6 +163,113 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
                                                     @Param("from") Instant from,
                                                     @Param("to") Instant to);
 
+    /** One client's outcomes per UTC day. {@code delivered} includes read, since a read message was delivered. */
+    @Query(value = """
+            SELECT (n.created_at AT TIME ZONE 'UTC')::date                     AS day,
+                   count(*)                                                  AS sends,
+                   count(*) FILTER (WHERE n.status IN ('DELIVERED', 'READ')) AS delivered,
+                   count(*) FILTER (WHERE n.status = 'READ')                 AS read,
+                   count(*) FILTER (WHERE n.status = 'FAILED')               AS failed
+              FROM notification_log n
+             WHERE n.client_account_id = :clientAccountId
+               AND n.created_at >= :from
+               AND n.created_at <  :to
+             GROUP BY 1
+             ORDER BY 1
+            """, nativeQuery = true)
+    List<ClientDailyStatRow> findDailyStatsForClient(@Param("clientAccountId") UUID clientAccountId,
+                                                       @Param("from") Instant from,
+                                                       @Param("to") Instant to);
+
+    /** Stored reasons with their counts. Explained elsewhere, because the raw text must not reach a client. */
+    @Query("""
+            SELECT n.failureReason AS reason, count(n) AS total
+              FROM NotificationLog n
+             WHERE n.clientAccountId = :clientAccountId
+               AND n.status = com.supportplatform.notification.NotificationStatus.FAILED
+               AND n.createdAt >= :from
+               AND n.createdAt <  :to
+             GROUP BY n.failureReason
+            """)
+    List<FailureReasonRow> findFailureReasonsForClient(@Param("clientAccountId") UUID clientAccountId,
+                                                         @Param("from") Instant from,
+                                                         @Param("to") Instant to);
+
+    /** Numbers that failed more than once, worst first: the ones a client can act on. */
+    @Query(value = """
+            SELECT n.recipient                                 AS recipient,
+                   count(*)                                    AS failedCount,
+                   (array_agg(n.id ORDER BY n.created_at DESC))[1] AS lastMessageId
+              FROM notification_log n
+             WHERE n.client_account_id = :clientAccountId
+               AND n.status = 'FAILED'
+               AND n.created_at >= :from
+               AND n.created_at <  :to
+             GROUP BY n.recipient
+            HAVING count(*) > 1
+             ORDER BY 2 DESC, 1
+             LIMIT 10
+            """, nativeQuery = true)
+    List<RepeatFailureRow> findRepeatFailuresForClient(@Param("clientAccountId") UUID clientAccountId,
+                                                         @Param("from") Instant from,
+                                                         @Param("to") Instant to);
+
+    /** The templates this client actually sent, which is not the same as the tenant's allowlist. */
+    @Query(value = """
+            SELECT n.template_name                                         AS name,
+                   count(*)                                                AS sends,
+                   count(*) FILTER (WHERE n.status IN ('DELIVERED', 'READ')) AS delivered,
+                   count(*) FILTER (WHERE n.status = 'READ')               AS read,
+                   count(*) FILTER (WHERE n.status = 'FAILED')             AS failed
+              FROM notification_log n
+             WHERE n.client_account_id = :clientAccountId
+               AND n.created_at >= :from
+               AND n.created_at <  :to
+             GROUP BY n.template_name
+             ORDER BY 2 DESC, 1
+            """, nativeQuery = true)
+    List<ClientTemplateRow> findTemplateUsageForClient(@Param("clientAccountId") UUID clientAccountId,
+                                                         @Param("from") Instant from,
+                                                         @Param("to") Instant to);
+
+    interface ClientDailyStatRow {
+        LocalDate getDay();
+
+        long getSends();
+
+        long getDelivered();
+
+        long getRead();
+
+        long getFailed();
+    }
+
+    interface FailureReasonRow {
+        String getReason();
+
+        long getTotal();
+    }
+
+    interface RepeatFailureRow {
+        String getRecipient();
+
+        long getFailedCount();
+
+        UUID getLastMessageId();
+    }
+
+    interface ClientTemplateRow {
+        String getName();
+
+        long getSends();
+
+        long getDelivered();
+
+        long getRead();
+
+        long getFailed();
+    }
+
     /** One day's outcomes for one key, as returned by {@link #findDailyOutcomesForKey}. */
     interface DailyOutcomeRow {
         LocalDate getDay();
