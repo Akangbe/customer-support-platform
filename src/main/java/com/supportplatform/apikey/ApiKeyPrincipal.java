@@ -9,5 +9,5 @@ import java.util.UUID;
  * identity for the request (Rule 3): it comes off the key row, never off
  * the request body. Carries no secret material.
  */
-public record ApiKeyPrincipal(UUID apiKeyId, UUID tenantId, String keyId, String name, int rateLimit) {
+public record ApiKeyPrincipal(UUID apiKeyId, UUID tenantId, UUID clientAccountId, String keyId, String name, int rateLimit) {
 }

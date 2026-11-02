@@ -66,7 +66,7 @@ public class DeliveryBlockedEmailListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDeliveryBlocked(DeliveryBlockedEvent event) {
-        if (!shouldAlert(event.tenantId(), event.error())) {
+        if (!shouldAlert(event)) {
             return;
         }
 
@@ -85,9 +85,13 @@ public class DeliveryBlockedEmailListener {
         }
     }
 
-    /** @return true the first time this (tenant, error) is seen, then not again until the cooldown lapses. */
-    private boolean shouldAlert(UUID tenantId, MetaBlockingError error) {
-        String key = tenantId + ":" + error.getCode();
+    /**
+     * @return true the first time this (tenant, error) is seen, then not again
+     *         until the cooldown lapses. A template-scoped alert also keys on
+     *         the sender, so one client's alert cannot silence another's.
+     */
+    private boolean shouldAlert(DeliveryBlockedEvent event) {
+        String key = event.tenantId() + ":" + event.error().getCode() + ":" + event.apiKeyId();
         Instant now = Instant.now();
         Instant previous = lastAlerted.get(key);
         if (previous != null && previous.isAfter(now.minus(COOLDOWN))) {
@@ -101,7 +105,11 @@ public class DeliveryBlockedEmailListener {
     }
 
     private void notifyEveryone(DeliveryBlockedEvent event, String scope) {
-        List<String> recipients = alertRecipients.forAllKeys(event.tenantId());
+        // A block on the number affects every client on it. A template-scoped
+        // alert names a template, which is that client's business alone.
+        List<String> recipients = event.apiKeyId() != null
+                ? alertRecipients.forKey(event.tenantId(), event.apiKeyId())
+                : alertRecipients.forAllKeys(event.tenantId());
         if (recipients.isEmpty()) {
             log.warn("No one to alert about blocked WhatsApp delivery in tenant {}", event.tenantId());
             return;

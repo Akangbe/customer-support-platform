@@ -13,6 +13,7 @@ import java.util.UUID;
  */
 public record ApiKeyResponse(
         UUID id,
+        UUID clientAccountId,
         String keyId,
         String name,
         /** Optional; null when no one outside the tenant is behind this key. */
@@ -25,7 +26,7 @@ public record ApiKeyResponse(
 ) {
 
     public static ApiKeyResponse from(ApiKey apiKey) {
-        return new ApiKeyResponse(apiKey.getId(), apiKey.getKeyId(), apiKey.getName(), apiKey.getContactEmail(),
+        return new ApiKeyResponse(apiKey.getId(), apiKey.getClientAccountId(), apiKey.getKeyId(), apiKey.getName(), apiKey.getContactEmail(),
                 apiKey.getRateLimit(), apiKey.isActive(), apiKey.getLastUsedAt(), apiKey.getCreatedAt(),
                 apiKey.getRevokedAt());
     }

@@ -779,3 +779,37 @@ Option 1 would not have.
 Delete `InMemoryRateLimiter` and make Redis mandatory once more than
 one backend instance is permanent — at that point the fallback is a
 liability, not a convenience.
+
+---
+
+## ADR-023 — Client accounts: the read boundary inside a tenant
+
+**Status:** Accepted
+
+### Context
+
+A tenant owns one WhatsApp number. Trustpady sends through the operator's
+number, so its key sits on the operator's tenant, and any other business on
+that number would share it. Tenant scoping alone would let one such client
+read another's messages and usage, and an `Idempotency-Key` reused by a second
+client would suppress its message and answer from the first client's record.
+
+### Decision
+
+Add `client_account`. Every API key belongs to one, and each notification is
+stamped with its account when written. Client-facing reads and idempotency are
+scoped by account. Tenant-wide reads remain for the tenant's Owners and Admins.
+
+Scoping by account rather than key means a rotated key keeps its history.
+Stamping the row rather than joining through the key means moving a key cannot
+move history. Composite foreign keys stop an account crossing tenants.
+
+### Consequences
+
+Templates are still allowlisted per tenant, so clients sharing a number can
+send each other's templates. The per-recipient ceiling is also still per
+tenant. A business with its own number gets its own tenant and neither applies.
+
+### Revisit Conditions
+
+Add per-client template ownership before a second client shares a number.

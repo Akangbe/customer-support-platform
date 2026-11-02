@@ -104,7 +104,7 @@ public class NotificationSendService {
         String key = normaliseKey(idempotencyKey);
         if (key != null) {
             Optional<NotificationLog> prior =
-                    notificationLogRepository.findByTenantIdAndIdempotencyKey(principal.tenantId(), key);
+                    notificationLogRepository.findByClientAccountIdAndIdempotencyKey(principal.clientAccountId(), key);
             if (prior.isPresent()) {
                 return replay(prior.get(), principal, key, "prior send");
             }
@@ -117,12 +117,12 @@ public class NotificationSendService {
         NotificationLog reserved;
         try {
             reserved = notificationLogRepository.saveAndFlush(NotificationLog.reserve(principal.tenantId(),
-                    principal.apiKeyId(), request.recipient(), request.templateName(), request.languageCode(), key));
+                    principal.apiKeyId(), principal.clientAccountId(), request.recipient(), request.templateName(), request.languageCode(), key));
         } catch (DataIntegrityViolationException e) {
             // Lost the race: another in-flight request claimed this key
             // between the lookup above and this insert.
             NotificationLog winner = notificationLogRepository
-                    .findByTenantIdAndIdempotencyKey(principal.tenantId(), key)
+                    .findByClientAccountIdAndIdempotencyKey(principal.clientAccountId(), key)
                     .orElseThrow(() -> e);
             return replay(winner, principal, key, "concurrent retry");
         }

@@ -17,7 +17,48 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
     /** Tenant-scoped by construction (Rule 3) — there is deliberately no unscoped finder. */
     Page<NotificationLog> findByTenantIdOrderByCreatedAtDesc(UUID tenantId, Pageable pageable);
 
-    Optional<NotificationLog> findByIdAndTenantId(UUID id, UUID tenantId);
+    Optional<NotificationLog> findByIdAndClientAccountId(UUID id, UUID clientAccountId);
+
+    Optional<NotificationLog> findByClientAccountIdAndMetaMessageId(UUID clientAccountId, String metaMessageId);
+
+    /** The per-client totals behind {@code findDailyUsage}: clients sharing a tenant must not see each other's volume. */
+    @Query(value = """
+            SELECT (n.created_at AT TIME ZONE 'UTC')::date AS day,
+                   count(*)                    AS sends,
+                   count(DISTINCT n.recipient) AS recipients
+              FROM notification_log n
+             WHERE n.client_account_id = :clientAccountId
+               AND n.created_at >= :from
+               AND n.created_at <  :to
+             GROUP BY 1
+             ORDER BY 1
+            """, nativeQuery = true)
+    List<DailyUsageRow> findDailyUsageForClient(@Param("clientAccountId") UUID clientAccountId,
+                                                  @Param("from") Instant from,
+                                                  @Param("to") Instant to);
+
+    @Query("""
+            SELECT n.status AS status, count(n) AS total
+              FROM NotificationLog n
+             WHERE n.clientAccountId = :clientAccountId
+               AND n.createdAt >= :from
+               AND n.createdAt <  :to
+             GROUP BY n.status
+            """)
+    List<StatusCountRow> countByStatusInRangeForClient(@Param("clientAccountId") UUID clientAccountId,
+                                                         @Param("from") Instant from,
+                                                         @Param("to") Instant to);
+
+    @Query("""
+            SELECT count(DISTINCT n.recipient)
+              FROM NotificationLog n
+             WHERE n.clientAccountId = :clientAccountId
+               AND n.createdAt >= :from
+               AND n.createdAt <  :to
+            """)
+    long countDistinctRecipientsInRangeForClient(@Param("clientAccountId") UUID clientAccountId,
+                                                   @Param("from") Instant from,
+                                                   @Param("to") Instant to);
 
     /** Backs both the tenant status lookup and the delivery webhook (unique index in V12). */
     Optional<NotificationLog> findByTenantIdAndMetaMessageId(UUID tenantId, String metaMessageId);
@@ -150,10 +191,10 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
     }
 
     /**
-     * The idempotency lookup (unique index in V15). At most one row can
-     * hold a given key for a tenant, so this is the whole replay decision.
+     * The idempotency lookup (unique index in V20). At most one row can
+     * hold a given key for a client, so this is the whole replay decision.
      */
-    Optional<NotificationLog> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
+    Optional<NotificationLog> findByClientAccountIdAndIdempotencyKey(UUID clientAccountId, String idempotencyKey);
 
     /**
      * How many notifications this recipient has already had for this
