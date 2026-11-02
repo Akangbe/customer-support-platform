@@ -2,6 +2,8 @@ package com.supportplatform.user;
 
 import com.supportplatform.audit.AuditAction;
 import com.supportplatform.audit.AuditEvent;
+import com.supportplatform.client.ClientAccount;
+import com.supportplatform.client.ClientAccountRepository;
 import com.supportplatform.user.dto.InviteUserRequest;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+import static org.springframework.http.HttpStatus.BAD_REQUEST;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 /**
@@ -35,17 +38,21 @@ public class UserService {
     private static final Duration INVITE_TOKEN_TTL = Duration.ofDays(7);
 
     private final UserRepository userRepository;
+    private final ClientAccountRepository clientAccountRepository;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, ApplicationEventPublisher eventPublisher) {
+    public UserService(UserRepository userRepository, ClientAccountRepository clientAccountRepository,
+                        PasswordEncoder passwordEncoder, ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
+        this.clientAccountRepository = clientAccountRepository;
         this.passwordEncoder = passwordEncoder;
         this.eventPublisher = eventPublisher;
     }
 
     @Transactional
     public User invite(UUID actingTenantId, UUID actorUserId, UserRole actingRole, InviteUserRequest request) {
+        requireStaffRole(request.role());
         requireCanManage(actingRole, request.role());
 
         String email = request.email().toLowerCase(Locale.ROOT);
@@ -64,6 +71,40 @@ public class UserService {
         return user;
     }
 
+    /** Gives a person at a client business a login tied to that client. Owner or Admin only. */
+    @Transactional
+    public User inviteClient(UUID actingTenantId, UUID actorUserId, UserRole actingRole, UUID clientAccountId,
+                              String rawEmail, String name) {
+        requireOwnerOrAdmin(actingRole);
+        requireClientAccount(actingTenantId, clientAccountId);
+
+        String email = rawEmail.toLowerCase(Locale.ROOT);
+        if (userRepository.existsByEmail(email)) {
+            throw new EmailAlreadyRegisteredException(email);
+        }
+
+        User user = userRepository.save(User.createInvitedClient(actingTenantId, clientAccountId, email, name,
+                generateToken(), Instant.now().plus(INVITE_TOKEN_TTL)));
+
+        publish(actingTenantId, actorUserId, AuditAction.USER_INVITED, user.getId(),
+                "Invited " + email + " to client account " + clientAccountId);
+        eventPublisher.publishEvent(new UserInvitedEvent(actingTenantId, user.getId()));
+        return user;
+    }
+
+    @Transactional(readOnly = true)
+    public List<ClientAccount> listClientAccounts(UUID tenantId, UserRole actingRole) {
+        requireOwnerOrAdmin(actingRole);
+        return clientAccountRepository.findByTenantIdOrderByName(tenantId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<User> listClientUsers(UUID tenantId, UserRole actingRole, UUID clientAccountId) {
+        requireOwnerOrAdmin(actingRole);
+        requireClientAccount(tenantId, clientAccountId);
+        return userRepository.findAllByTenantIdAndClientAccountId(tenantId, clientAccountId);
+    }
+
     @Transactional
     public User acceptInvite(String token, String rawPassword) {
         User user = userRepository.findByInviteToken(token)
@@ -76,7 +117,7 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public List<User> listByTenant(UUID tenantId) {
-        return userRepository.findAllByTenantId(tenantId);
+        return userRepository.findAllByTenantIdAndRoleNot(tenantId, UserRole.CLIENT);
     }
 
     @Transactional
@@ -93,6 +134,8 @@ public class UserService {
     @Transactional
     public User changeRole(UUID actingTenantId, UUID actorUserId, UserRole actingRole, UUID targetUserId, UserRole newRole) {
         User target = getWithinTenant(actingTenantId, targetUserId);
+        requireStaffRole(target.getRole());
+        requireStaffRole(newRole);
         requireCanManage(actingRole, target.getRole());
         requireCanManage(actingRole, newRole);
 
@@ -130,16 +173,35 @@ public class UserService {
         return target;
     }
 
-    /** Admin may manage only the operational roles (Manager, Agent); Owner may manage any role. */
+    /** Admin may manage the operational roles and client users; Owner may manage any role. */
     private void requireCanManage(UserRole actingRole, UserRole targetRole) {
         boolean allowed = switch (actingRole) {
             case OWNER -> true;
-            case ADMIN -> targetRole == UserRole.MANAGER || targetRole == UserRole.AGENT;
-            case MANAGER, AGENT -> false;
+            case ADMIN -> targetRole == UserRole.MANAGER || targetRole == UserRole.AGENT
+                    || targetRole == UserRole.CLIENT;
+            case MANAGER, AGENT, CLIENT -> false;
         };
         if (!allowed) {
             throw new AccessDeniedException("Insufficient privileges to manage this role");
         }
+    }
+
+    /** CLIENT is never granted or removed by a role change: it comes with a client account, fixed at invite. */
+    private void requireStaffRole(UserRole role) {
+        if (role == UserRole.CLIENT) {
+            throw new ResponseStatusException(BAD_REQUEST, "Client users are managed through their client account.");
+        }
+    }
+
+    private void requireOwnerOrAdmin(UserRole actingRole) {
+        if (actingRole != UserRole.OWNER && actingRole != UserRole.ADMIN) {
+            throw new AccessDeniedException("Only Owner or Admin can manage client accounts");
+        }
+    }
+
+    private void requireClientAccount(UUID tenantId, UUID clientAccountId) {
+        clientAccountRepository.findByIdAndTenantId(clientAccountId, tenantId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Client account not found"));
     }
 
     /** A tenant may never be left with zero active Owners (ADR-016). */

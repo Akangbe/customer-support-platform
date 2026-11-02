@@ -44,6 +44,10 @@ public class User {
     @Column(nullable = false, length = 20)
     private UserStatus status;
 
+    /** Set exactly when the role is CLIENT (V21). Fixed for life: moving a person between clients is a new invite. */
+    @Column(name = "client_account_id", updatable = false)
+    private UUID clientAccountId;
+
     @Column(name = "invite_token")
     private String inviteToken;
 
@@ -88,11 +92,23 @@ public class User {
         return user;
     }
 
+    /** A person at a client business, pending until they accept the invite and set a password. */
+    public static User createInvitedClient(UUID tenantId, UUID clientAccountId, String email, String name,
+                                            String inviteToken, Instant inviteTokenExpiresAt) {
+        User user = createInvited(tenantId, email, name, UserRole.CLIENT, inviteToken, inviteTokenExpiresAt);
+        user.clientAccountId = clientAccountId;
+        return user;
+    }
+
     public void activate(String passwordHash) {
         this.passwordHash = passwordHash;
         this.status = UserStatus.ACTIVE;
         this.inviteToken = null;
         this.inviteTokenExpiresAt = null;
+    }
+
+    public void changePassword(String passwordHash) {
+        this.passwordHash = passwordHash;
     }
 
     public void changeRole(UserRole newRole) {
@@ -133,6 +149,10 @@ public class User {
 
     public UUID getTenantId() {
         return tenantId;
+    }
+
+    public UUID getClientAccountId() {
+        return clientAccountId;
     }
 
     public String getEmail() {

@@ -2,6 +2,8 @@ package com.supportplatform.apikey;
 
 import com.supportplatform.audit.AuditAction;
 import com.supportplatform.audit.AuditEvent;
+import com.supportplatform.client.ClientAccount;
+import com.supportplatform.client.ClientAccountRepository;
 import com.supportplatform.user.UserRole;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
@@ -57,12 +59,14 @@ public class ApiKeyService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final ApiKeyRepository apiKeyRepository;
+    private final ClientAccountRepository clientAccountRepository;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
 
-    public ApiKeyService(ApiKeyRepository apiKeyRepository, PasswordEncoder passwordEncoder,
-                          ApplicationEventPublisher eventPublisher) {
+    public ApiKeyService(ApiKeyRepository apiKeyRepository, ClientAccountRepository clientAccountRepository,
+                          PasswordEncoder passwordEncoder, ApplicationEventPublisher eventPublisher) {
         this.apiKeyRepository = apiKeyRepository;
+        this.clientAccountRepository = clientAccountRepository;
         this.passwordEncoder = passwordEncoder;
         this.eventPublisher = eventPublisher;
     }
@@ -72,16 +76,26 @@ public class ApiKeyService {
      * once. Only the hash of the secret half is persisted, so this return
      * value cannot be reconstructed afterwards — by us or by anyone holding
      * a database dump.
+     *
+     * @param clientAccountId the existing account to join, which is how a key
+     *                        is rotated without losing its history; {@code null}
+     *                        starts a new account named after the key
      */
     @Transactional
     public IssuedApiKey create(UUID tenantId, UUID actorUserId, UserRole actingRole, String name, Integer rateLimit,
-                                 String contactEmail) {
+                                 String contactEmail, UUID clientAccountId) {
         requireOwnerOrAdmin(actingRole);
+
+        UUID accountId = clientAccountId == null
+                ? clientAccountRepository.save(new ClientAccount(tenantId, name)).getId()
+                : clientAccountRepository.findByIdAndTenantId(clientAccountId, tenantId)
+                        .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Client account not found"))
+                        .getId();
 
         String keyId = HexFormat.of().formatHex(randomBytes(KEY_ID_BYTES));
         String secret = Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes(SECRET_BYTES));
 
-        ApiKey key = new ApiKey(tenantId, keyId, passwordEncoder.encode(secret), name,
+        ApiKey key = new ApiKey(tenantId, accountId, keyId, passwordEncoder.encode(secret), name,
                 rateLimit == null ? DEFAULT_RATE_LIMIT : rateLimit);
         // Optional, and never echoed into the audit entry below: the audit
         // log records that a key was issued, not who to email about it.
@@ -277,8 +291,8 @@ public class ApiKeyService {
             return Optional.empty();
         }
 
-        return Optional.of(new ApiKeyPrincipal(apiKey.getId(), apiKey.getTenantId(), apiKey.getKeyId(), apiKey.getName(),
-                apiKey.getRateLimit()));
+        return Optional.of(new ApiKeyPrincipal(apiKey.getId(), apiKey.getTenantId(), apiKey.getClientAccountId(),
+                apiKey.getKeyId(), apiKey.getName(), apiKey.getRateLimit()));
     }
 
     /**

@@ -146,6 +146,25 @@ class DeliveryBlockedAlertTest extends AbstractWhatsAppIntegrationTest {
                 .doesNotContain("EVERY message");
     }
 
+    /** A template is one client's business: an alert naming it must not reach another client on the same number. */
+    @Test
+    void aPausedTemplateAlertGoesOnlyToTheClientThatSentIt() throws Exception {
+        MockHttpSession owner = registerTenantAndGetSession("Block Co 6", "Block Owner 6", "block-owner-6@example.com", "password123");
+        UUID tenantId = extractTenantId(owner);
+        String phoneNumberId = connectWhatsApp(owner, "block-pn-6");
+        UUID senderKey = UUID.fromString(issueKey(owner, "Client A", "ops@client-a.example.com"));
+        issueKey(owner, "Client B", "ops@client-b.example.com");
+        notificationLogRepository.save(NotificationLog.sent(tenantId, senderKey, "+2348159103556",
+                "trustpady_notification_utility", "en", "wamid.BLOCK-6"));
+
+        postSignedWebhook(failedStatusPayload(phoneNumberId, "wamid.BLOCK-6", 132015,
+                "Template paused", "Template was paused due to low quality."));
+        inboundEventProcessor.processPending();
+
+        verify(emailGateway).send(eq("ops@client-a.example.com"), anyString(), anyString(), anyString());
+        verify(emailGateway, never()).send(eq("ops@client-b.example.com"), anyString(), anyString(), anyString());
+    }
+
     /** @return the new key's id */
     private String issueKey(MockHttpSession owner, String name, String contactEmail) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/api-keys")

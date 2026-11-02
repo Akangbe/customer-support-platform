@@ -204,22 +204,25 @@ class WebhookEventHandler {
 
         if (messageService.applyDeliveryStatus(tenantId, waMessageId, metaStatus, failureReason)) {
             // A conversation message has no template, so nothing to name.
-            blocking.ifPresent(error -> publishBlocked(tenantId, error, null, failureReason));
+            blocking.ifPresent(error -> publishBlocked(tenantId, error, null, null, failureReason));
             return;
         }
         if (notificationLogService.applyDeliveryStatus(tenantId, waMessageId, metaStatus, failureReason)) {
-            blocking.ifPresent(error -> publishBlocked(tenantId, error,
-                    error.getScope() == MetaBlockingError.Scope.TEMPLATE
-                            ? notificationLogService.findTemplateName(tenantId, waMessageId).orElse(null)
-                            : null,
-                    failureReason));
+            blocking.ifPresent(error -> {
+                boolean templateScoped = error.getScope() == MetaBlockingError.Scope.TEMPLATE;
+                publishBlocked(tenantId, error,
+                        templateScoped ? notificationLogService.findTemplateName(tenantId, waMessageId).orElse(null) : null,
+                        templateScoped ? notificationLogService.findApiKeyId(tenantId, waMessageId).orElse(null) : null,
+                        failureReason);
+            });
             return;
         }
         log.warn("Status webhook for unrecognized wa_message_id {} in tenant {}", waMessageId, tenantId);
     }
 
-    private void publishBlocked(UUID tenantId, MetaBlockingError error, String templateName, String failureReason) {
-        eventPublisher.publishEvent(new DeliveryBlockedEvent(tenantId, error, templateName, failureReason));
+    private void publishBlocked(UUID tenantId, MetaBlockingError error, String templateName, UUID apiKeyId,
+                                 String failureReason) {
+        eventPublisher.publishEvent(new DeliveryBlockedEvent(tenantId, error, templateName, apiKeyId, failureReason));
     }
 
     /**

@@ -59,20 +59,68 @@ public class NotificationUsageService {
         if (actingRole != UserRole.OWNER && actingRole != UserRole.ADMIN) {
             throw new AccessDeniedException("Only Owner or Admin can view notification usage");
         }
-        return usage(tenantId, from, to);
+        return usageForTenant(tenantId, from, to);
     }
 
     /**
-     * Integrator entry point. The tenant comes off the API key (Rule 3), so
-     * a caller can only ever read its own usage — there is no parameter
-     * through which it could name another.
+     * Integrator entry point. The account comes off the API key, and clients
+     * can share a tenant, so a caller can only ever read its own usage —
+     * there is no parameter through which it could name another.
      */
     @Transactional(readOnly = true)
-    public NotificationUsageResponse forApiKey(UUID tenantId, LocalDate from, LocalDate to) {
-        return usage(tenantId, from, to);
+    public NotificationUsageResponse forClientAccount(UUID clientAccountId, LocalDate from, LocalDate to) {
+        return usage(new UsageSource() {
+            @Override
+            public List<NotificationLogRepository.StatusCountRow> statusCounts(Instant start, Instant end) {
+                return notificationLogRepository.countByStatusInRangeForClient(clientAccountId, start, end);
+            }
+
+            @Override
+            public List<NotificationLogRepository.DailyUsageRow> daily(Instant start, Instant end) {
+                return notificationLogRepository.findDailyUsageForClient(clientAccountId, start, end);
+            }
+
+            @Override
+            public long distinctRecipients(Instant start, Instant end) {
+                return notificationLogRepository.countDistinctRecipientsInRangeForClient(clientAccountId, start, end);
+            }
+        }, from, to);
     }
 
-    private NotificationUsageResponse usage(UUID tenantId, LocalDate from, LocalDate to) {
+    private NotificationUsageResponse usageForTenant(UUID tenantId, LocalDate from, LocalDate to) {
+        return usage(new UsageSource() {
+            @Override
+            public List<NotificationLogRepository.StatusCountRow> statusCounts(Instant start, Instant end) {
+                return notificationLogRepository.countByStatusInRange(tenantId, start, end);
+            }
+
+            @Override
+            public List<NotificationLogRepository.DailyUsageRow> daily(Instant start, Instant end) {
+                return notificationLogRepository.findDailyUsage(tenantId, start, end);
+            }
+
+            @Override
+            public long distinctRecipients(Instant start, Instant end) {
+                return notificationLogRepository.countDistinctRecipientsInRange(tenantId, start, end);
+            }
+        }, from, to);
+    }
+
+    /** The three aggregates a usage figure needs, over whichever scope the caller is allowed. */
+    private interface UsageSource {
+        List<NotificationLogRepository.StatusCountRow> statusCounts(Instant start, Instant end);
+
+        List<NotificationLogRepository.DailyUsageRow> daily(Instant start, Instant end);
+
+        long distinctRecipients(Instant start, Instant end);
+    }
+
+    /** A checked range of whole UTC days, and the half-open instants that cover it. */
+    public record UsageRange(LocalDate start, LocalDate end, Instant fromInstant, Instant toInstant) {
+    }
+
+    /** Applies the default range and the {@link #MAX_RANGE_DAYS} limit for any caller reading by date. */
+    public UsageRange resolveRange(LocalDate from, LocalDate to) {
         LocalDate end = to == null ? LocalDate.now(ZoneOffset.UTC) : to;
         LocalDate start = from == null ? end.minusDays(DEFAULT_RANGE_DAYS - 1L) : from;
         validate(start, end);
@@ -81,17 +129,25 @@ public class NotificationUsageService {
         // including, 00:00:00 on the day after the last. An inclusive upper
         // bound would either drop the final day's sends or double-count the
         // boundary depending on how it was written.
-        Instant fromInstant = start.atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant toInstant = end.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        return new UsageRange(start, end, start.atStartOfDay(ZoneOffset.UTC).toInstant(),
+                end.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+    }
+
+    private NotificationUsageResponse usage(UsageSource source, LocalDate from, LocalDate to) {
+        UsageRange range = resolveRange(from, to);
+        LocalDate start = range.start();
+        LocalDate end = range.end();
+        Instant fromInstant = range.fromInstant();
+        Instant toInstant = range.toInstant();
 
         Map<NotificationStatus, Long> counts = new EnumMap<>(NotificationStatus.class);
         for (NotificationLogRepository.StatusCountRow row
-                : notificationLogRepository.countByStatusInRange(tenantId, fromInstant, toInstant)) {
+                : source.statusCounts(fromInstant, toInstant)) {
             counts.put(row.getStatus(), row.getTotal());
         }
 
         List<NotificationUsageResponse.DailyUsage> daily =
-                notificationLogRepository.findDailyUsage(tenantId, fromInstant, toInstant).stream()
+                source.daily(fromInstant, toInstant).stream()
                         .map(r -> new NotificationUsageResponse.DailyUsage(r.getDay(), r.getSends(), r.getRecipients()))
                         .toList();
 
@@ -101,7 +157,7 @@ public class NotificationUsageService {
                 start,
                 end,
                 total,
-                notificationLogRepository.countDistinctRecipientsInRange(tenantId, fromInstant, toInstant),
+                source.distinctRecipients(fromInstant, toInstant),
                 new NotificationUsageResponse.StatusBreakdown(
                         counts.getOrDefault(NotificationStatus.PENDING, 0L),
                         counts.getOrDefault(NotificationStatus.SENT, 0L),

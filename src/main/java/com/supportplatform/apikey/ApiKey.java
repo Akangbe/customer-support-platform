@@ -31,6 +31,10 @@ public class ApiKey {
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
+    /** The business this key belongs to (V20). A rotated key joins the same account, so its history carries over. */
+    @Column(name = "client_account_id", nullable = false, updatable = false)
+    private UUID clientAccountId;
+
     /** The plaintext lookup handle — safe to store and log; it identifies, it doesn't authenticate. */
     @Column(name = "key_id", nullable = false, unique = true, length = 64)
     private String keyId;
@@ -70,8 +74,9 @@ public class ApiKey {
     protected ApiKey() {
     }
 
-    public ApiKey(UUID tenantId, String keyId, String secretHash, String name, int rateLimit) {
+    public ApiKey(UUID tenantId, UUID clientAccountId, String keyId, String secretHash, String name, int rateLimit) {
         this.tenantId = tenantId;
+        this.clientAccountId = clientAccountId;
         this.keyId = keyId;
         this.secretHash = secretHash;
         this.name = name;
@@ -106,6 +111,10 @@ public class ApiKey {
 
     public UUID getTenantId() {
         return tenantId;
+    }
+
+    public UUID getClientAccountId() {
+        return clientAccountId;
     }
 
     public String getKeyId() {

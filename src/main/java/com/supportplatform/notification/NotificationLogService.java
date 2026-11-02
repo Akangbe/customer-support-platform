@@ -76,16 +76,27 @@ public class NotificationLogService {
                 .map(NotificationLog::getTemplateName);
     }
 
+    /**
+     * The sender of a send, so an alert about one template can go only to the
+     * client using it. Empty for a conversation message or a keyless row.
+     */
     @Transactional(readOnly = true)
-    public NotificationLog getWithinTenant(UUID tenantId, UUID notificationId) {
-        return notificationLogRepository.findByIdAndTenantId(notificationId, tenantId)
+    public Optional<UUID> findApiKeyId(UUID tenantId, String metaMessageId) {
+        return notificationLogRepository.findByTenantIdAndMetaMessageId(tenantId, metaMessageId)
+                .map(NotificationLog::getApiKeyId);
+    }
+
+    /** Scoped to the client, because clients can share a tenant: another client's id is a 404. */
+    @Transactional(readOnly = true)
+    public NotificationLog getForClientAccount(UUID clientAccountId, UUID notificationId) {
+        return notificationLogRepository.findByIdAndClientAccountId(notificationId, clientAccountId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Notification not found"));
     }
 
     /** Lookup by Meta's own id — what a caller has if they only kept what we returned as {@code metaMessageId}. */
     @Transactional(readOnly = true)
-    public NotificationLog getByMetaMessageId(UUID tenantId, String metaMessageId) {
-        return notificationLogRepository.findByTenantIdAndMetaMessageId(tenantId, metaMessageId)
+    public NotificationLog getByMetaMessageId(UUID clientAccountId, String metaMessageId) {
+        return notificationLogRepository.findByClientAccountIdAndMetaMessageId(clientAccountId, metaMessageId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Notification not found"));
     }
 }

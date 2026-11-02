@@ -779,3 +779,104 @@ Option 1 would not have.
 Delete `InMemoryRateLimiter` and make Redis mandatory once more than
 one backend instance is permanent — at that point the fallback is a
 liability, not a convenience.
+
+---
+
+## ADR-023 — Client accounts: the read boundary inside a tenant
+
+**Status:** Accepted
+
+### Context
+
+A tenant owns one WhatsApp number. Trustpady sends through the operator's
+number, so its key sits on the operator's tenant, and any other business on
+that number would share it. Tenant scoping alone would let one such client
+read another's messages and usage, and an `Idempotency-Key` reused by a second
+client would suppress its message and answer from the first client's record.
+
+### Decision
+
+Add `client_account`. Every API key belongs to one, and each notification is
+stamped with its account when written. Client-facing reads and idempotency are
+scoped by account. Tenant-wide reads remain for the tenant's Owners and Admins.
+
+Scoping by account rather than key means a rotated key keeps its history.
+Stamping the row rather than joining through the key means moving a key cannot
+move history. Composite foreign keys stop an account crossing tenants.
+
+### Consequences
+
+Templates are still allowlisted per tenant, so clients sharing a number can
+send each other's templates. The per-recipient ceiling is also still per
+tenant. A business with its own number gets its own tenant and neither applies.
+
+### Revisit Conditions
+
+Add per-client template ownership before a second client shares a number.
+
+---
+
+## ADR-024 — Client users: a role denied by default, not a separate login
+
+**Status:** Accepted
+
+### Context
+
+People at client businesses need to sign in. Trustpady shares the operator's
+tenant, so an ordinary tenant user would reach the operator's inbox and team.
+
+### Options Considered
+
+1. A separate user table and login. Isolated, but duplicates passwords,
+   invites and lockout, and needs its own principal type.
+2. A `CLIENT` role on `app_user`, tied to one client account.
+
+### Decision
+
+**Option 2.** The session chain names the staff roles for everything outside
+`/api/v1/client/**` and `/api/v1/users/me`, so a `CLIENT` user, or any role
+added later, is refused unless a rule admits it. A test walks every mapped
+route to hold this. Client handlers read through `ClientScope`, which re-reads
+the user on each call so that disabling someone takes effect at once.
+
+### Consequences
+
+Every query that lists a tenant's users has to exclude `CLIENT`, because they
+share the table. The database check ties the role to having a client account.
+
+## ADR-025 — Password reset: hashed single-use links, and ended sessions
+
+**Status:** Accepted
+
+### Context
+
+People locked out of an account had no way back except a new invite, and a
+client user cannot be re-invited to an address that already has an account.
+The reset endpoints need no login, so they must not reveal which addresses
+have accounts, or let a leaked database or log take one over.
+
+### Options Considered
+
+1. Reuse the invite token columns on `app_user`. Little code, but stored in
+   plain text, and the token rules differ.
+2. A separate table holding only a hash of each token.
+
+### Decision
+
+**Option 2.** A link lasts an hour, works once, and cancels any earlier link.
+Requests run on a small bounded queue and always answer 202, because waiting for
+an email would show that the address exists. Three requests per hour per user.
+The token travels in the URL fragment, which browsers do not send to servers.
+
+Completing a reset does not sign the person in, ends their existing sessions,
+and clears any login lockout. Sessions are ended through an in-memory list of
+revocation times, checked against when each session signed in. Sessions are in
+memory too, so a restart clears both together.
+
+### Consequences
+
+Revocation assumes one application instance, like `LoginAttemptService`, and must
+move to shared storage if the app ever runs more than one. The request limit is
+per user, not per caller, because the frontend proxy hides the caller's address.
+An open realtime socket is not closed by revocation; it loses access only when
+it reconnects.

@@ -15,7 +15,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByIdAndTenantId(UUID id, UUID tenantId);
 
-    List<User> findAllByTenantId(UUID tenantId);
+    /** The tenant's team, which never includes people from its client businesses. */
+    List<User> findAllByTenantIdAndRoleNot(UUID tenantId, UserRole role);
+
+    List<User> findAllByTenantIdAndClientAccountId(UUID tenantId, UUID clientAccountId);
 
     Optional<User> findByInviteToken(String inviteToken);
 

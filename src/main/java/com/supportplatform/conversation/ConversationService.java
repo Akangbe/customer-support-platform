@@ -103,6 +103,7 @@ public class ConversationService {
         }
 
         User target = userRepository.findByIdAndTenantId(targetAgentId, tenantId)
+                .filter(user -> user.getRole() != UserRole.CLIENT)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Agent not found"));
         if (target.getStatus() != UserStatus.ACTIVE) {
             throw new InvalidConversationStateException("Cannot assign to an inactive user");
