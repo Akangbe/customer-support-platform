@@ -4,5 +4,7 @@ public enum UserRole {
     OWNER,
     ADMIN,
     MANAGER,
-    AGENT
+    AGENT,
+    /** A person at a client business (V21): reads that client's data, and is not on the tenant's team. */
+    CLIENT
 }

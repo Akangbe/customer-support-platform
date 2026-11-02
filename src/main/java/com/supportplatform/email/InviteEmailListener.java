@@ -1,6 +1,7 @@
 package com.supportplatform.email;
 
 import com.supportplatform.user.User;
+import com.supportplatform.user.UserRole;
 import com.supportplatform.user.UserInvitedEvent;
 import com.supportplatform.user.UserService;
 import org.slf4j.Logger;
@@ -47,10 +48,14 @@ public class InviteEmailListener {
             String link = String.format(acceptInviteUrlTemplate, user.getInviteToken());
             String expiry = EXPIRY_FORMAT.format(user.getInviteTokenExpiresAt());
 
-            String subject = "You've been invited to join a workspace";
-            String text = "You've been invited as " + user.getRole() + ". Accept your invite: " + link
+            boolean client = user.getRole() == UserRole.CLIENT;
+            String subject = client ? "You've been invited to your messaging dashboard"
+                    : "You've been invited to join a workspace";
+            String text = (client ? "You've been invited to your messaging dashboard."
+                    : "You've been invited as " + user.getRole() + ".") + " Accept your invite: " + link
                     + "\n\nThis link expires on " + expiry + ".";
-            String html = "<p>You've been invited to join a workspace as <strong>" + user.getRole() + "</strong>.</p>"
+            String html = (client ? "<p>You've been invited to your messaging dashboard.</p>"
+                    : "<p>You've been invited to join a workspace as <strong>" + user.getRole() + "</strong>.</p>")
                     + "<p><a href=\"" + link + "\">Accept your invite</a></p>"
                     + "<p>This link expires on " + expiry + ".</p>";
 
