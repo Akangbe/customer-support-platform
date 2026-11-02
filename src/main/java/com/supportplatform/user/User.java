@@ -107,6 +107,10 @@ public class User {
         this.inviteTokenExpiresAt = null;
     }
 
+    public void changePassword(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
     public void changeRole(UserRole newRole) {
         this.role = newRole;
     }

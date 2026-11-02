@@ -162,3 +162,5 @@ storage (`storage.StorageGateway` / `R2StorageGateway`).
   is a `%s`-templated URL pointing at the frontend's accept-invite page —
   the backend doesn't know the frontend's routing, so this is configured
   per environment.
+- **`app.email.password-reset-url-template`** (`PASSWORD_RESET_URL_TEMPLATE`)
+  does the same for the reset page. See ADR-025 for how reset links work.

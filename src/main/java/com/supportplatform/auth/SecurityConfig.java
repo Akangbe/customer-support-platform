@@ -13,6 +13,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -27,13 +28,16 @@ public class SecurityConfig {
     private final AppUserDetailsService userDetailsService;
     private final RestAuthenticationEntryPoint authenticationEntryPoint;
     private final RestAccessDeniedHandler accessDeniedHandler;
+    private final SessionRevocations sessionRevocations;
 
     @Value("${app.cors.allowed-origins}")
     private List<String> allowedOrigins;
 
     public SecurityConfig(AppUserDetailsService userDetailsService,
                            RestAuthenticationEntryPoint authenticationEntryPoint,
-                           RestAccessDeniedHandler accessDeniedHandler) {
+                           RestAccessDeniedHandler accessDeniedHandler,
+                           SessionRevocations sessionRevocations) {
+        this.sessionRevocations = sessionRevocations;
         this.userDetailsService = userDetailsService;
         this.authenticationEntryPoint = authenticationEntryPoint;
         this.accessDeniedHandler = accessDeniedHandler;
@@ -81,11 +85,14 @@ public class SecurityConfig {
                 // form-encoded bodies or the cookie's SameSite policy has to be relaxed.
                 .csrf(csrf -> csrf.disable())
                 .securityContext(context -> context.securityContextRepository(securityContextRepository))
+                .addFilterAfter(new SessionRevocationFilter(sessionRevocations), SecurityContextHolderFilter.class)
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(
                                 "/api/v1/auth/register-tenant",
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/accept-invite",
+                                "/api/v1/auth/password-reset/request",
+                                "/api/v1/auth/password-reset/confirm",
                                 "/api/v1/whatsapp/webhook",
                                 "/actuator/health",
                                 "/actuator/info"

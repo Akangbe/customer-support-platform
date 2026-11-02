@@ -37,6 +37,7 @@ class ClientLoginTest extends AbstractApiKeyIntegrationTest {
     private static final Set<String> OPEN_TO_CLIENT = Set.of(
             "/api/v1/users/me",
             "/api/v1/auth/login", "/api/v1/auth/register-tenant", "/api/v1/auth/accept-invite",
+            "/api/v1/auth/password-reset/request", "/api/v1/auth/password-reset/confirm",
             "/api/v1/whatsapp/webhook", "/error");
 
     @Autowired

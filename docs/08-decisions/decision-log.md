@@ -843,3 +843,40 @@ the user on each call so that disabling someone takes effect at once.
 
 Every query that lists a tenant's users has to exclude `CLIENT`, because they
 share the table. The database check ties the role to having a client account.
+
+## ADR-025 — Password reset: hashed single-use links, and ended sessions
+
+**Status:** Accepted
+
+### Context
+
+People locked out of an account had no way back except a new invite, and a
+client user cannot be re-invited to an address that already has an account.
+The reset endpoints need no login, so they must not reveal which addresses
+have accounts, or let a leaked database or log take one over.
+
+### Options Considered
+
+1. Reuse the invite token columns on `app_user`. Little code, but stored in
+   plain text, and the token rules differ.
+2. A separate table holding only a hash of each token.
+
+### Decision
+
+**Option 2.** A link lasts an hour, works once, and cancels any earlier link.
+Requests run on a small bounded queue and always answer 202, because waiting for
+an email would show that the address exists. Three requests per hour per user.
+The token travels in the URL fragment, which browsers do not send to servers.
+
+Completing a reset does not sign the person in, ends their existing sessions,
+and clears any login lockout. Sessions are ended through an in-memory list of
+revocation times, checked against when each session signed in. Sessions are in
+memory too, so a restart clears both together.
+
+### Consequences
+
+Revocation assumes one application instance, like `LoginAttemptService`, and must
+move to shared storage if the app ever runs more than one. The request limit is
+per user, not per caller, because the frontend proxy hides the caller's address.
+An open realtime socket is not closed by revocation; it loses access only when
+it reconnects.

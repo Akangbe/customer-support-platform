@@ -19,6 +19,7 @@ app:
     from-address: ${SES_FROM_EMAIL}
     from-name: ${SES_FROM_NAME}
     accept-invite-url-template: ${INVITE_ACCEPT_URL_TEMPLATE}
+    password-reset-url-template: ${PASSWORD_RESET_URL_TEMPLATE}
 
 management:
   endpoint:

@@ -102,6 +102,9 @@ app:
     from-address: ${SES_FROM_EMAIL:invites@localhost.dev}
     from-name: ${SES_FROM_NAME:Support Platform}
     accept-invite-url-template: ${INVITE_ACCEPT_URL_TEMPLATE:http://localhost:3000/accept-invite?token=%s}
+    # A fragment, not a query: browsers never send it to a server, so the token
+    # stays out of access logs and Referer headers.
+    password-reset-url-template: ${PASSWORD_RESET_URL_TEMPLATE:http://localhost:3000/reset-password#token=%s}
 
 server:
   port: ${PORT:8080}
