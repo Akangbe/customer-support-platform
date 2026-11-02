@@ -5,6 +5,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+import java.util.UUID;
+
 /**
  * Deliberately has no {@code tenantId} field: the tenant a key belongs to
  * comes from the authenticated Owner/Admin's security context (Rule 3).
@@ -22,6 +24,12 @@ public record CreateApiKeyRequest(
          * checked in {@code ApiKeyService}, which is also where "" is read as
          * "none", so there is no {@code @Email} here to reject a list.
          */
-        @Size(max = 320) String contactEmail
+        @Size(max = 320) String contactEmail,
+
+        /**
+         * The existing client account this key joins, for rotating a key
+         * without losing its history. Omitted, the key starts a new account.
+         */
+        UUID clientAccountId
 ) {
 }

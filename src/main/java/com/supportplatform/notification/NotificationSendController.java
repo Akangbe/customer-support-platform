@@ -82,12 +82,13 @@ public class NotificationSendController {
     @GetMapping("/{notificationId}")
     public NotificationStatusResponse getById(@AuthenticationPrincipal ApiKeyPrincipal principal,
                                                 @PathVariable UUID notificationId) {
-        return NotificationStatusResponse.from(logService.getWithinTenant(principal.tenantId(), notificationId));
+        return NotificationStatusResponse.from(logService.getForClientAccount(principal.clientAccountId(), notificationId));
     }
 
     /**
-     * What this key has sent. Scoped to the key's own tenant (Rule 3) —
-     * there is no parameter through which a caller could name another —
+     * What this client has sent, across all its keys. Scoped to the key's
+     * client account, because clients can share a tenant, and there is no
+     * parameter through which a caller could name another —
      * so an integrator can reconcile its own volume without anyone having
      * to export a report for it.
      *
@@ -99,7 +100,7 @@ public class NotificationSendController {
             @AuthenticationPrincipal ApiKeyPrincipal principal,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return usageService.forApiKey(principal.tenantId(), from, to);
+        return usageService.forClientAccount(principal.clientAccountId(), from, to);
     }
 
     /**
@@ -111,6 +112,6 @@ public class NotificationSendController {
     @GetMapping
     public NotificationStatusResponse getByMetaMessageId(@AuthenticationPrincipal ApiKeyPrincipal principal,
                                                            @RequestParam String metaMessageId) {
-        return NotificationStatusResponse.from(logService.getByMetaMessageId(principal.tenantId(), metaMessageId));
+        return NotificationStatusResponse.from(logService.getByMetaMessageId(principal.clientAccountId(), metaMessageId));
     }
 }

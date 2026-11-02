@@ -16,6 +16,10 @@ import java.util.UUID;
  *                     {@code TEMPLATE}-scoped error; may be {@code null}
  *                     when the failure was a conversation message rather
  *                     than a notification
+ * @param apiKeyId     the key whose send a {@code TEMPLATE}-scoped error came
+ *                     from, so only that client is told about its template;
+ *                     {@code null} for a block on the whole number
  */
-public record DeliveryBlockedEvent(UUID tenantId, MetaBlockingError error, String templateName, String failureReason) {
+public record DeliveryBlockedEvent(UUID tenantId, MetaBlockingError error, String templateName, UUID apiKeyId,
+                                   String failureReason) {
 }

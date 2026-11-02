@@ -46,6 +46,10 @@ public class NotificationLog {
     @Column(name = "api_key_id")
     private UUID apiKeyId;
 
+    /** The business that sent it (V20). Fixed at write time, so reassigning a key can never move history. */
+    @Column(name = "client_account_id", updatable = false)
+    private UUID clientAccountId;
+
     @Column(nullable = false, length = 20)
     private String recipient;
 
@@ -111,10 +115,11 @@ public class NotificationLog {
      * claiming otherwise would be a lie a later status webhook would have to
      * correct.
      */
-    public static NotificationLog reserve(UUID tenantId, UUID apiKeyId, String recipient, String templateName,
-                                            String languageCode, String idempotencyKey) {
+    public static NotificationLog reserve(UUID tenantId, UUID apiKeyId, UUID clientAccountId, String recipient,
+                                            String templateName, String languageCode, String idempotencyKey) {
         NotificationLog reserved = new NotificationLog(tenantId, apiKeyId, recipient, templateName, languageCode,
                 NotificationStatus.PENDING, null, null);
+        reserved.clientAccountId = clientAccountId;
         reserved.idempotencyKey = idempotencyKey;
         return reserved;
     }
@@ -173,6 +178,10 @@ public class NotificationLog {
 
     public UUID getApiKeyId() {
         return apiKeyId;
+    }
+
+    public UUID getClientAccountId() {
+        return clientAccountId;
     }
 
     public String getRecipient() {
