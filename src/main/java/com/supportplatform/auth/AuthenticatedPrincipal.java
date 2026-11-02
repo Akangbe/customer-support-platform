@@ -6,6 +6,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
@@ -28,6 +29,7 @@ public class AuthenticatedPrincipal implements UserDetails {
     private final UserRole role;
     private final UUID clientAccountId;
     private final boolean enabled;
+    private final Instant authenticatedAt;
 
     public AuthenticatedPrincipal(User user) {
         this.userId = user.getId();
@@ -38,6 +40,7 @@ public class AuthenticatedPrincipal implements UserDetails {
         this.role = user.getRole();
         this.clientAccountId = user.getClientAccountId();
         this.enabled = user.getStatus() == ACTIVE;
+        this.authenticatedAt = Instant.now();
     }
 
     public UUID getUserId() {
@@ -59,6 +62,11 @@ public class AuthenticatedPrincipal implements UserDetails {
     /** Null except for a CLIENT user. */
     public UUID getClientAccountId() {
         return clientAccountId;
+    }
+
+    /** Built once at login and then kept in the session, so this is when the session began. */
+    public Instant getAuthenticatedAt() {
+        return authenticatedAt;
     }
 
     @Override
