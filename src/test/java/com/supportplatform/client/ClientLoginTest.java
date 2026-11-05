@@ -122,7 +122,7 @@ class ClientLoginTest extends AbstractApiKeyIntegrationTest {
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/v1/client/me").session(client))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

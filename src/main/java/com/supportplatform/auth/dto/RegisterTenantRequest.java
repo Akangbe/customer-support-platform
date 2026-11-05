@@ -8,6 +8,6 @@ public record RegisterTenantRequest(
         @NotBlank String tenantName,
         @NotBlank String ownerName,
         @NotBlank @Email String email,
-        @NotBlank @Size(min = 8, max = 100) String password
+        @NotBlank @Size(min = 8, max = 100) @FitsBcrypt String password
 ) {
 }
