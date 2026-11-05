@@ -118,6 +118,14 @@ POST /api/v1/auth/accept-invite  { token, password }
   → validates token + expiry, sets password_hash, status → ACTIVE
 ```
 
+A session keeps the role and status it signed in with, so three changes end a
+user's existing sessions at once: disabling them, changing their role, and
+resetting their password (`SessionRevocations`). Their open WebSocket connections
+close at the same moment (`UserSocketSessions`), since a socket makes no further
+requests for the security filter to check. Enabling a user again does not bring
+an ended session back. Passwords are limited to 72 bytes (`@FitsBcrypt`), because
+BCrypt refuses to hash more.
+
 ## 6. Authorization model
 
 - The authenticated principal (`userId`, `tenantId`, `role`) comes **only**

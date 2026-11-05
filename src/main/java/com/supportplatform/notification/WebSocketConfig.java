@@ -3,6 +3,7 @@ package com.supportplatform.notification;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
+import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
@@ -23,13 +24,21 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final PrincipalHandshakeInterceptor handshakeInterceptor;
     private final TenantSubscriptionInterceptor subscriptionInterceptor;
+    private final UserSocketSessions userSocketSessions;
 
     @Value("${app.cors.allowed-origins}")
     private List<String> allowedOrigins;
 
-    public WebSocketConfig(PrincipalHandshakeInterceptor handshakeInterceptor, TenantSubscriptionInterceptor subscriptionInterceptor) {
+    public WebSocketConfig(PrincipalHandshakeInterceptor handshakeInterceptor, TenantSubscriptionInterceptor subscriptionInterceptor,
+                           UserSocketSessions userSocketSessions) {
         this.handshakeInterceptor = handshakeInterceptor;
         this.subscriptionInterceptor = subscriptionInterceptor;
+        this.userSocketSessions = userSocketSessions;
+    }
+
+    @Override
+    public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
+        registration.addDecoratorFactory(userSocketSessions);
     }
 
     @Override

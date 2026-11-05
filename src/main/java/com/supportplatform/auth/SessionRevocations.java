@@ -1,5 +1,6 @@
 package com.supportplatform.auth;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -17,9 +18,15 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SessionRevocations {
 
     private final Map<UUID, Instant> revokedAt = new ConcurrentHashMap<>();
+    private final ApplicationEventPublisher eventPublisher;
+
+    public SessionRevocations(ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
 
     public void revokeExisting(UUID userId) {
         revokedAt.put(userId, Instant.now());
+        eventPublisher.publishEvent(new UserSessionsRevokedEvent(userId));
     }
 
     boolean isRevoked(UUID userId, Instant authenticatedAt) {

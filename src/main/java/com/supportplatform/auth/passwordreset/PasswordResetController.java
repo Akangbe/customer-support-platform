@@ -2,6 +2,7 @@ package com.supportplatform.auth.passwordreset;
 
 import com.supportplatform.auth.LoginAttemptService;
 import com.supportplatform.auth.SessionRevocations;
+import com.supportplatform.auth.dto.FitsBcrypt;
 import com.supportplatform.user.User;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -22,7 +23,7 @@ public class PasswordResetController {
     }
 
     public record ConfirmRequest(@NotBlank @Size(max = 100) String token,
-                                 @NotBlank @Size(min = 8, max = 100) String password) {
+                                 @NotBlank @Size(min = 8, max = 100) @FitsBcrypt String password) {
     }
 
     private final PasswordResetRequests requests;

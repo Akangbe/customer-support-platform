@@ -1,6 +1,7 @@
 package com.supportplatform.user;
 
 import com.supportplatform.auth.AuthenticatedPrincipal;
+import com.supportplatform.auth.SessionRevocations;
 import com.supportplatform.user.dto.ChangeRoleRequest;
 import com.supportplatform.user.dto.InviteUserRequest;
 import com.supportplatform.user.dto.InviteUserResponse;
@@ -25,9 +26,11 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final SessionRevocations sessionRevocations;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, SessionRevocations sessionRevocations) {
         this.userService = userService;
+        this.sessionRevocations = sessionRevocations;
     }
 
     @GetMapping("/me")
@@ -54,12 +57,15 @@ public class UserController {
     public UserSummaryResponse changeRole(@AuthenticationPrincipal AuthenticatedPrincipal principal,
                                            @PathVariable UUID id, @Valid @RequestBody ChangeRoleRequest request) {
         User updated = userService.changeRole(principal.getTenantId(), principal.getUserId(), principal.getRole(), id, request.role());
+        // A session keeps the role it signed in with, so it must not outlive the change.
+        sessionRevocations.revokeExisting(id);
         return UserSummaryResponse.from(updated);
     }
 
     @PostMapping("/{id}/disable")
     public UserSummaryResponse disable(@AuthenticationPrincipal AuthenticatedPrincipal principal, @PathVariable UUID id) {
         User updated = userService.disable(principal.getTenantId(), principal.getUserId(), principal.getRole(), id);
+        sessionRevocations.revokeExisting(id);
         return UserSummaryResponse.from(updated);
     }
 
