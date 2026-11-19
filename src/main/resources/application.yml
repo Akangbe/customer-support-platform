@@ -109,6 +109,12 @@ app:
 server:
   port: ${PORT:8080}
   shutdown: graceful
+  servlet:
+    session:
+      # How long a signed-in session survives without a request. Tomcat's
+      # default is 30 minutes, which signed people out every time they left
+      # the tab for a coffee. Matches the frontend cookie's 7-day lifetime.
+      timeout: ${SESSION_TIMEOUT:7d}
 
 spring:
   application:
