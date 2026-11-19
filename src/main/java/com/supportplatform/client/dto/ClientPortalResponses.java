@@ -4,6 +4,7 @@ import com.supportplatform.client.FailureExplanation;
 import com.supportplatform.notification.NotificationStatus;
 import com.supportplatform.notification.dto.NotificationUsageResponse;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -24,7 +25,14 @@ public final class ClientPortalResponses {
      */
     public record Overview(LocalDate from, LocalDate to, String timezone, long totalSends, long distinctRecipients,
                            NotificationUsageResponse.StatusBreakdown byStatus, Double deliveryRate,
-                           List<FailureGroup> failures, List<RepeatFailure> repeatFailures) {
+                           List<FailureGroup> failures, List<RepeatFailure> repeatFailures, Cost cost) {
+    }
+
+    /**
+     * @param estimated         delivered messages times {@code pricePerDelivered}, rounded to cents
+     * @param pricePerDelivered Meta's charge per delivered message, as configured
+     */
+    public record Cost(BigDecimal estimated, BigDecimal pricePerDelivered, String currency) {
     }
 
     public record FailureGroup(String code, FailureExplanation.Category category, String message, long count) {
