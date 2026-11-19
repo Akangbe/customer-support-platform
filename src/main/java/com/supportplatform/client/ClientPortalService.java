@@ -12,12 +12,15 @@ import com.supportplatform.notification.NotificationUsageService;
 import com.supportplatform.notification.dto.NotificationUsageResponse;
 import com.supportplatform.whatsapp.WhatsAppTemplate;
 import com.supportplatform.whatsapp.WhatsAppTemplateRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -43,17 +46,28 @@ public class ClientPortalService {
     private final WhatsAppTemplateRepository templateRepository;
     private final ApiKeyRepository apiKeyRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final BigDecimal pricePerDelivered;
+    private final String currency;
 
+    /**
+     * The price and currency are the same ones the daily spend email uses, so
+     * the portal and the email never disagree about what a day cost.
+     */
     public ClientPortalService(NotificationLogRepository notificationLogRepository,
                                  NotificationUsageService usageService, ClientMessageQuery messageQuery,
                                  WhatsAppTemplateRepository templateRepository, ApiKeyRepository apiKeyRepository,
-                                 ApplicationEventPublisher eventPublisher) {
+                                 ApplicationEventPublisher eventPublisher,
+                                 @Value("${app.notifications.daily-summary.price-per-delivered:0.01}")
+                                 BigDecimal pricePerDelivered,
+                                 @Value("${app.notifications.daily-summary.currency:AUD}") String currency) {
         this.notificationLogRepository = notificationLogRepository;
         this.usageService = usageService;
         this.messageQuery = messageQuery;
         this.templateRepository = templateRepository;
         this.apiKeyRepository = apiKeyRepository;
         this.eventPublisher = eventPublisher;
+        this.pricePerDelivered = pricePerDelivered;
+        this.currency = currency;
     }
 
     @Transactional(readOnly = true)
@@ -62,12 +76,17 @@ public class ClientPortalService {
         UUID account = scope.clientAccountId();
         NotificationUsageResponse usage = usageService.forClientAccount(account, from, to);
         NotificationUsageResponse.StatusBreakdown status = usage.byStatus();
+        long delivered = status.delivered() + status.read();
         Double deliveryRate = usage.totalSends() == 0 ? null
-                : (double) (status.delivered() + status.read()) / usage.totalSends();
+                : (double) delivered / usage.totalSends();
+        // Meta bills a message once it is delivered; a read message was delivered first.
+        BigDecimal estimatedCost = pricePerDelivered.multiply(BigDecimal.valueOf(delivered))
+                .setScale(2, RoundingMode.HALF_UP);
 
         return new ClientPortalResponses.Overview(range.start(), range.end(), TIMEZONE, usage.totalSends(),
                 usage.distinctRecipients(), status, deliveryRate,
-                failureGroups(account, range), repeatFailures(account, range));
+                failureGroups(account, range), repeatFailures(account, range),
+                new ClientPortalResponses.Cost(estimatedCost, pricePerDelivered, currency));
     }
 
     @Transactional(readOnly = true)
